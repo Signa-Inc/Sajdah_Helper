@@ -13,7 +13,7 @@ class SajdahConfig {
   static const double resetThreshold = 0.25;            // % изменений для сброса состояния (поднялся)
   static const int framesToConfirm = 3;                 // Сколько кадров подряд нужно для детекции
   static const int cooldownVibrationSeconds = 2;        // Защита от дребезга (пауза между суджудами)
-  //static const double minBrightessThreshold = 80.0;     // Порог "слишком темно"
+  static const double minBrightessThreshold = 80.0;     // Порог "слишком темно"
 }
 
 late List<CameraDescription> _cameras;
@@ -201,9 +201,33 @@ class _SajdahScreenState extends State<SajdahScreen> {
               style: ElevatedButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 15)),
               child: const Text("СБРОС"),
             ),
+            const SizedBox(height: 20),
+            if(currentBrightness <= SajdahConfig.minBrightessThreshold)
+              Text(
+                "Внимание слишком темно\nкамера не работает\nнажимайте кнопку '+1' при саджде",
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: Colors.redAccent,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w400,
+                ),
+              ),
           ],
         ),
       ),
+      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
+      floatingActionButton: InkWell(
+        onTap: processSajda,
+        onLongPress: processSajda,
+        child: const FloatingActionButton(
+          backgroundColor: Colors.teal,
+          onPressed: null,
+          child: Text(
+            '+1',
+            style: TextStyle(color: Colors.white70, fontSize: 20),
+          ),
+        ),
+      )
     );
   }
 
