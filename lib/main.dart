@@ -42,8 +42,8 @@ class SajdahScreen extends StatefulWidget {
 
 class _SajdahScreenState extends State<SajdahScreen> {
   CameraController? controller;
-  int rakatCount = 0;
-  int sajdahInCurrentRakat = 0;
+  double rakatCount = 0;
+  //int sajdahInCurrentRakat = 0;
 
   List<int>? baselineFrame;
   bool isSajdaDetected = false;
@@ -136,18 +136,18 @@ class _SajdahScreenState extends State<SajdahScreen> {
     Vibration.vibrate(duration: 100);
 
     setState(() {
-      sajdahInCurrentRakat++;
-      if (sajdahInCurrentRakat == 2) {
-        rakatCount++;
-        sajdahInCurrentRakat = 0;
-      }
+      //sajdahInCurrentRakat++;
+      //if (sajdahInCurrentRakat == 2) {
+        rakatCount+=0.5;
+      //  sajdahInCurrentRakat = 0;
+      //}
     });
   }
 
   Future<void> resetAll() async {
     setState(() {
       rakatCount = 0;
-      sajdahInCurrentRakat = 0;
+      //sajdahInCurrentRakat = 0;
       baselineFrame = null;
       confirmCount = 0;
     });
@@ -175,8 +175,8 @@ class _SajdahScreenState extends State<SajdahScreen> {
           children: [
             _buildStatLabel("РАКААТЫ", Colors.grey, 24),
             _buildStatValue("$rakatCount", 120),
-            const SizedBox(height: 20),
-            _buildStatLabel("Поклоны: $sajdahInCurrentRakat / 2", Colors.white, 20),
+            //const SizedBox(height: 20),
+            //_buildStatLabel("Поклоны: $sajdahInCurrentRakat / 2", Colors.white, 20),
             const SizedBox(height: 30),
             Text(
               "Яркость: ${currentBrightness.toStringAsFixed(1)}",
@@ -215,19 +215,22 @@ class _SajdahScreenState extends State<SajdahScreen> {
           ],
         ),
       ),
-      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
+      floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
       floatingActionButton: InkWell(
-        onTap: processSajda,
+        onDoubleTap: processSajda,
         onLongPress: processSajda,
-        child: const FloatingActionButton(
-          backgroundColor: Colors.teal,
-          onPressed: null,
-          child: Text(
-            '+1',
-            style: TextStyle(color: Colors.white70, fontSize: 20),
+        child: SizedBox(
+          width: double.infinity,
+          child: FloatingActionButton(
+            backgroundColor: Colors.teal,
+            onPressed: processSajda,
+            child: const Text(
+              '+1',
+              style: TextStyle(color: Colors.white70, fontSize: 26),
+            ),
           ),
         ),
-      )
+      ),
     );
   }
 
