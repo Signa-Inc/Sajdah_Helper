@@ -66,8 +66,13 @@ class _SajdahScreenState extends State<SajdahScreen> {
 
   bool isDebugMode = false;
 
-  // --- ПЕРЕМЕННЫЕ ДЛЯ ТАСКОВ С ТЕМНОТОЙ ---
-  bool showDarkWarning = false;               // Показывается ли сейчас предупреждение
+  // --- ПЕРЕМЕННЫЕ ДЛЯ ТАСКОВ С УВЕДОМЛЕНИЯМИ ---
+  bool isInitializing = true;                 // Идет ли сейчас настройка компонентов
+  bool showStatusMessage = false;             // Показывается ли плашка после инициализации
+  String statusMessageText = "";              // Текст верхнего сообщения
+  Color statusMessageColor = Colors.yellow;   // Цвет верхнего сообщения
+  double statusMessageFontSize = 18;          // Динамический размер шрифта для верхнего сообщения
+
   bool hasCheckedInitialBrightness = false;   // Была ли уже сделана стартовая проверка
 
   @override
@@ -80,6 +85,9 @@ class _SajdahScreenState extends State<SajdahScreen> {
   Future<void> initCamera() async {
     if (_cameras.isEmpty) {
       debugPrint("Камеры не найдены на устройстве");
+      setState(() {
+        isInitializing = false;
+      });
       return;
     }
 
@@ -91,6 +99,14 @@ class _SajdahScreenState extends State<SajdahScreen> {
         return _cameras.first;       // Возвращаем первую доступную камеру как запасной вариант
       },
     );
+
+    // Если фронталка не найдена, выходим из режима загрузки сразу, так как потока кадров не будет
+    if (!isFrontCameraFinded) {
+      setState(() {
+        isInitializing = false;
+      });
+      return;
+    }
 
     controller = CameraController(selectedCamera, ResolutionPreset.low, enableAudio: false);
 
@@ -106,6 +122,9 @@ class _SajdahScreenState extends State<SajdahScreen> {
       controller!.startImageStream(analyzeFrame);
     } catch (e) {
       debugPrint("Ошибка камеры: $e");
+      setState(() {
+        isInitializing = false;
+      });
     }
 
     if (mounted) setState(() {});
@@ -129,20 +148,32 @@ class _SajdahScreenState extends State<SajdahScreen> {
     }
     double avgBrightness = count > 0 ? totalBrightness / count : 0;
 
-    // СТАРТОВАЯ ПРОВЕРКА ЯРКОСТИ (Выполняется 1 раз за запуск)
+    // СТАРТОВАЯ ПРОВЕРКА ЯРКОСТИ (Выполняется 1 раз за запуск при первом кадре)
     if (!hasCheckedInitialBrightness) {
       hasCheckedInitialBrightness = true;
+      isInitializing = false; // Инициализация успешно завершена
+      showStatusMessage = true;
+
       if (avgBrightness <= SajdahConfig.minBrightessThreshold) {
-        showDarkWarning = true;
-        // Таймер авто-скрытия плашки ровно через 10 секунд
-        Timer(const Duration(seconds: 10), () {
-          if (mounted) {
-            setState(() {
-              showDarkWarning = false;
-            });
-          }
-        });
+        // Если темно — длинный текст, уменьшаем шрифт
+        statusMessageText = "Слишком темно. Используйте кнопку '+1'";
+        statusMessageColor = Colors.redAccent;
+        statusMessageFontSize = 23;
+      } else {
+        // Если всё в порядке — короткий текст, увеличиваем шрифт
+        statusMessageText = "Всё нормально, можете молиться";
+        statusMessageColor = Colors.greenAccent;
+        statusMessageFontSize = 23;
       }
+
+      // Таймер авто-скрытия плашки ровно через 10 секунд
+      Timer(const Duration(seconds: 5), () {
+        if (mounted) {
+          setState(() {
+            showStatusMessage = false;
+          });
+        }
+      });
     }
 
     // 2. Инициализируем базовый кадр
@@ -239,7 +270,7 @@ class _SajdahScreenState extends State<SajdahScreen> {
     });
 
     if (controller != null && controller!.value.isInitialized) {
-      await controller!.setExposureMode(ExposureMode.auto);
+      await controller!.setExposureMode(FocusMode.locked == true ? ExposureMode.auto : ExposureMode.auto);
       await Future.delayed(const Duration(milliseconds: 500));
       await controller!.setExposureMode(ExposureMode.locked);
     }
@@ -281,7 +312,7 @@ class _SajdahScreenState extends State<SajdahScreen> {
               children: [
                 const Spacer(flex: 3), // Центрируем контент более плавно
 
-                _buildStatLabel("РАКААТЫ", Colors.white24, 20),
+                _buildStatLabel("РАКААТЫ", Colors.white38, 35),
 
                 const SizedBox(height: 5),
 
@@ -292,7 +323,7 @@ class _SajdahScreenState extends State<SajdahScreen> {
                       : null,
                   child: _buildStatValue(
                       rakatCount % 1 == 0 ? rakatCount.toInt().toString() : rakatCount.toString(),
-                      110
+                      150
                   ),
                 ),
 
@@ -301,7 +332,7 @@ class _SajdahScreenState extends State<SajdahScreen> {
                   onPressed: resetAll,
                   icon: const Icon(Icons.refresh_rounded),
                   color: Colors.white30,
-                  iconSize: 22,
+                  iconSize: 35,
                   style: IconButton.styleFrom(
                     backgroundColor: Colors.white.withOpacity(0.01),
                     padding: const EdgeInsets.all(14),
@@ -311,10 +342,7 @@ class _SajdahScreenState extends State<SajdahScreen> {
 
                 const SizedBox(height: 10),
 
-                // Премиальные мягкие плашки предупреждений цвета затухающего янтаря
-                if (showDarkWarning)
-                  _buildWarningCard("Слишком темно. Камера может не работать. Используйте кнопку '+1'"),
-
+                // Премиальная мягкая плашка предупреждения (только для отсутствия физической камеры)
                 if (!isFrontCameraFinded)
                   _buildWarningCard("Фронтальная камера не найдена, используйте кнопку '+1'"),
 
@@ -340,7 +368,7 @@ class _SajdahScreenState extends State<SajdahScreen> {
               icon: Icon(
                 isDebugMode ? Icons.bug_report : Icons.bug_report_outlined,
                 color: isDebugMode ? Colors.orangeAccent.withOpacity(0.6) : Colors.white12,
-                size: 24,
+                size: 35,
               ),
               onPressed: () {
                 setState(() {
@@ -352,6 +380,41 @@ class _SajdahScreenState extends State<SajdahScreen> {
               },
             ),
           ),
+
+          // --- ВЕРХНИЕ СТАТУСНЫЕ УВЕДОМЛЕНИЯ ---
+          if (isInitializing)
+            Positioned(
+              top: 52,
+              left: 80,
+              right: 80,
+              child: Text(
+                "Секунду, настраиваем камеру",
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                    color: Colors.yellow.withOpacity(0.7),
+                    fontSize: 23, // Изменено: Оптимальный размер под среднюю строку загрузки
+                    fontWeight: FontWeight.w400,
+                    letterSpacing: 0.5
+                ),
+              ),
+            ),
+
+          if (showStatusMessage)
+            Positioned(
+              top: 52,
+              left: 80,
+              right: 80,
+              child: Text(
+                statusMessageText,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                    color: statusMessageColor.withOpacity(0.8),
+                    fontSize: statusMessageFontSize, // Изменено: Размер теперь зависит от выбранного текста
+                    fontWeight: FontWeight.w400,
+                    letterSpacing: 0.3
+                ),
+              ),
+            ),
         ],
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
@@ -359,7 +422,7 @@ class _SajdahScreenState extends State<SajdahScreen> {
     );
   }
 
-  // --- Новые благородные Stealth-виджеты ---
+  // --- Вспомогательные Stealth-виджеты ---
 
   Widget _buildStatLabel(String text, Color color, double size) => Text(
     text,
@@ -367,7 +430,7 @@ class _SajdahScreenState extends State<SajdahScreen> {
       fontSize: size,
       color: color,
       fontWeight: FontWeight.w400,
-      letterSpacing: 4.0, // Красивый благородный разбег букв
+      letterSpacing: 4.0,
     ),
   );
 
@@ -375,8 +438,8 @@ class _SajdahScreenState extends State<SajdahScreen> {
     text,
     style: TextStyle(
       fontSize: size,
-      fontWeight: FontWeight.w100, // Элегантный тонкий стиль
-      color: Colors.white70, // Приглушили, чтобы не слепило
+      fontWeight: FontWeight.w100,
+      color: Colors.white70,
     ),
   );
 
@@ -385,7 +448,6 @@ class _SajdahScreenState extends State<SajdahScreen> {
     style: const TextStyle(color: Colors.white30, fontSize: 13, fontFamily: 'monospace'),
   );
 
-  // Мягкое полупрозрачное уведомление
   Widget _buildWarningCard(String text) => Padding(
     padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 5),
     child: Container(
@@ -418,17 +480,17 @@ class _SajdahScreenState extends State<SajdahScreen> {
     onPanStart: (_) => processSajda(),
     child: Container(
       width: double.infinity,
-      height: 130, // Сделали чуть компактнее по высоте
+      height: 130,
       alignment: Alignment.center,
-      margin: const EdgeInsets.symmetric(horizontal: 8), // Красивые отступы от краев корпуса
+      margin: const EdgeInsets.symmetric(horizontal: 8),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.01), // Почти полностью растворяется на черном экране
+        color: Colors.white.withOpacity(0.01),
         borderRadius: BorderRadius.circular(13),
         border: Border.all(color: Colors.white.withOpacity(0.2), width: 1),
       ),
       child: const Text(
         '+1',
-        style: TextStyle(color: Colors.white38, fontSize: 20/*, fontWeight: FontWeight.w300*/),
+        style: TextStyle(color: Colors.white38, fontSize: 35),
       ),
     ),
   );
