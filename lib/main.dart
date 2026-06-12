@@ -4,41 +4,89 @@ import 'package:vibration/vibration.dart';
 import 'dart:async';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:flutter/services.dart';
+import 'sajdah_localization.dart';
+import 'sajdah_storage.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 
-// --- КОНФИГ ---
 class SajdahConfig {
-  static const int pixelStep = 15;                      // Шаг проверки пикселей (чем больше, тем быстрее, но хуже точность)
-  static const int sensitivityThreshold = 35;           // Насколько сильно должен измениться цвет пикселя (0-255)
-  static const double detectionThreshold = 0.85;        // % изменений для фиксации суджуда
-  static const double resetThreshold = 0.25;            // % изменений для сброса состояния (поднялся)
-  static const int framesToConfirm = 3;                 // Сколько кадров подряд нужно для детекции
-  static const int cooldownVibrationSeconds = 2;        // Защита от дребезга (пауза между суджудами)
-  static const double minBrightessThreshold = 100.0;    // Порог "слишком темно"
+  static const int pixelStep = 15;
+  static const int sensitivityThreshold = 35;
+  static const double detectionThreshold = 0.85;
+  static const double resetThreshold = 0.25;
+  static const int framesToConfirm = 3;
+  static const int cooldownVibrationSeconds = 2;
+  static const double minBrightessThreshold = 100.0;
+  static const int frameThrottleMs = 50;
 }
 
 late List<CameraDescription> _cameras;
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky); // Убираем статус-бар
+  SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
 
-  // Жестко фиксируем ориентацию самого приложения в портрет
   await SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
+
+  await SajdahStorage().init();
+
+  final String systemLang = WidgetsBinding.instance.platformDispatcher.locale.languageCode;
+  SajdahLocalization().init(systemLang);
 
   _cameras = await availableCameras();
   runApp(const SajdahApp());
 }
 
-class SajdahApp extends StatelessWidget {
+class SajdahApp extends StatefulWidget {
   const SajdahApp({super.key});
+
+  static void restartApp(BuildContext context) {
+    context.findAncestorStateOfType<_SajdahAppState>()?.restart();
+  }
+
   @override
-  Widget build(BuildContext context) => MaterialApp(
-    debugShowCheckedModeBanner: false,
-    theme: ThemeData.dark().copyWith(
-      scaffoldBackgroundColor: Colors.black, // Гарантируем глубокий черный фон
-    ),
-    home: const SajdahScreen(),
-  );
+  State<SajdahApp> createState() => _SajdahAppState();
+}
+
+class _SajdahAppState extends State<SajdahApp> {
+  Key _key = UniqueKey();
+
+  void restart() {
+    setState(() {
+      _key = UniqueKey();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: SajdahLocalization(),
+      builder: (context, _) {
+        final currentLang = SajdahLocalization().currentLocale;
+
+        return KeyedSubtree(
+          key: _key,
+          child: MaterialApp(
+            debugShowCheckedModeBanner: false,
+            theme: ThemeData.dark().copyWith(
+              scaffoldBackgroundColor: Colors.black,
+            ),
+
+            // --- ДОБАВЛЯЕМ ЭТИ ТРИ СТРОКИ ---
+            locale: Locale(currentLang), // Указывает Flutter текущий язык
+            supportedLocales: const [Locale('ru'), Locale('en'), Locale('ar')],
+            localizationsDelegates: const [
+              GlobalMaterialLocalizations.delegate,
+              GlobalWidgetsLocalizations.delegate,
+              GlobalCupertinoLocalizations.delegate,
+            ],
+            // ---------------------------------
+
+            home: const SajdahScreen(),
+          ),
+        );
+      },
+    );
+  }
 }
 
 class SajdahScreen extends StatefulWidget {
@@ -47,7 +95,7 @@ class SajdahScreen extends StatefulWidget {
   State<SajdahScreen> createState() => _SajdahScreenState();
 }
 
-class _SajdahScreenState extends State<SajdahScreen> {
+class _SajdahScreenState extends State<SajdahScreen> with WidgetsBindingObserver {
   CameraController? controller;
   double rakatCount = 0;
 
@@ -59,27 +107,46 @@ class _SajdahScreenState extends State<SajdahScreen> {
   double currentBrightness = 0.0;
   double changePercentage = 0;
 
-  // Флаг видимости камеры в UI
   bool showCameraPreview = false;
-
   bool isFrontCameraFinded = true;
 
+  // Состояния настроек
   bool isDebugMode = false;
+  bool isSettingsOpen = false;
 
-  // --- ПЕРЕМЕННЫЕ ДЛЯ ТАСКОВ С УВЕДОМЛЕНИЯМИ ---
-  bool isInitializing = true;                 // Идет ли сейчас настройка компонентов
-  bool showStatusMessage = false;             // Показывается ли плашка после инициализации
-  String statusMessageText = "";              // Текст верхнего сообщения
-  Color statusMessageColor = Colors.yellow;   // Цвет верхнего сообщения
-  double statusMessageFontSize = 18;          // Динамический размер шрифта для верхнего сообщения
+  DateTime? _lastFrameTime;
 
-  bool hasCheckedInitialBrightness = false;   // Была ли уже сделана стартовая проверка
+  bool isInitializing = true;
+  bool showStatusMessage = false;
+  String statusMessageText = "";
+  Color statusMessageColor = Colors.yellow;
+  double statusMessageFontSize = 18;
+
+  bool hasCheckedInitialBrightness = false;
 
   @override
   void initState() {
     super.initState();
-    WakelockPlus.enable(); // Экрану запрещено гаснуть
+    WidgetsBinding.instance.addObserver(this);
+    WakelockPlus.enable();
+
+    // Загружаем сохраненный режим отладки из памяти
+    isDebugMode = SajdahStorage().getDebugMode();
+
     initCamera();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (controller == null || !controller!.value.isInitialized || isSettingsOpen) return;
+
+    if (state == AppLifecycleState.inactive || state == AppLifecycleState.paused) {
+      controller?.stopImageStream();
+    } else if (state == AppLifecycleState.resumed) {
+      if (isFrontCameraFinded && !controller!.value.isStreamingImages) {
+        controller?.startImageStream(analyzeFrame);
+      }
+    }
   }
 
   Future<void> initCamera() async {
@@ -91,16 +158,14 @@ class _SajdahScreenState extends State<SajdahScreen> {
       return;
     }
 
-    // Ищем фронтальную камеру по её типу направления линзы
     CameraDescription selectedCamera = _cameras.firstWhere(
           (camera) => camera.lensDirection == CameraLensDirection.front,
       orElse: () {
-        isFrontCameraFinded = false; // Фронталка НЕ найдена, меняем флаг на false
-        return _cameras.first;       // Возвращаем первую доступную камеру как запасной вариант
+        isFrontCameraFinded = false;
+        return _cameras.first;
       },
     );
 
-    // Если фронталка не найдена, выходим из режима загрузки сразу, так как потока кадров не будет
     if (!isFrontCameraFinded) {
       setState(() {
         isInitializing = false;
@@ -119,7 +184,10 @@ class _SajdahScreenState extends State<SajdahScreen> {
         await controller!.lockCaptureOrientation(DeviceOrientation.portraitUp);
       }
 
-      controller!.startImageStream(analyzeFrame);
+      // Запускаем стрим только если панель настроек закрыта
+      if (!isSettingsOpen) {
+        controller!.startImageStream(analyzeFrame);
+      }
     } catch (e) {
       debugPrint("Ошибка камеры: $e");
       setState(() {
@@ -130,43 +198,70 @@ class _SajdahScreenState extends State<SajdahScreen> {
     if (mounted) setState(() {});
   }
 
+  // Метод переключения панели настроек с остановкой/запуском камеры
+  void toggleSettings() async {
+    setState(() {
+      isSettingsOpen = !isSettingsOpen;
+    });
+
+    if (isSettingsOpen) {
+      // Засыпаем: останавливаем камеру и убираем превью дебага
+      if (controller != null && controller!.value.isStreamingImages) {
+        await controller?.stopImageStream();
+      }
+    } else {
+      // Просыпаемся: если фронталка на месте, заводим стрим заново
+      if (isFrontCameraFinded && controller != null && controller!.value.isInitialized) {
+        if (!controller!.value.isStreamingImages) {
+          baselineFrame = null; // Сбрасываем базовый кадр для адаптации к возможно новому освещению
+          controller!.startImageStream(analyzeFrame);
+        }
+      }
+    }
+  }
+
   void analyzeFrame(CameraImage image) {
-    if(!isFrontCameraFinded) return;
+    if(!isFrontCameraFinded || isSettingsOpen) return;
+
+    final now = DateTime.now();
+    if (_lastFrameTime != null &&
+        now.difference(_lastFrameTime!).inMilliseconds < SajdahConfig.frameThrottleMs) {
+      return;
+    }
+    _lastFrameTime = now;
 
     final bytes = image.planes[0].bytes;
     final int width = image.width;
     final int height = image.height;
     final int bytesPerRow = image.planes[0].bytesPerRow;
 
-    // 1. Считаем общую яркость
-    double totalBrightness = 0;
-    int checkStep = 50;
-    int count = 0;
-    for (int i = 0; i < bytes.length; i += checkStep) {
-      totalBrightness += bytes[i];
-      count++;
+    double avgBrightness = 0;
+    if (!hasCheckedInitialBrightness || isDebugMode) {
+      double totalBrightness = 0;
+      int checkStep = 50;
+      int count = 0;
+      for (int i = 0; i < bytes.length; i += checkStep) {
+        totalBrightness += bytes[i];
+        count++;
+      }
+      avgBrightness = count > 0 ? totalBrightness / count : 0;
     }
-    double avgBrightness = count > 0 ? totalBrightness / count : 0;
 
-    // СТАРТОВАЯ ПРОВЕРКА ЯРКОСТИ (Выполняется 1 раз за запуск при первом кадре)
     if (!hasCheckedInitialBrightness) {
       hasCheckedInitialBrightness = true;
-      isInitializing = false; // Инициализация успешно завершена
+      isInitializing = false;
       showStatusMessage = true;
 
       if (avgBrightness <= SajdahConfig.minBrightessThreshold) {
-        // Если темно — длинный текст, уменьшаем шрифт
-        statusMessageText = "Слишком темно. Используйте кнопку '+1'";
+        statusMessageText = SajdahLocalization().translate('too_dark');
         statusMessageColor = Colors.redAccent;
         statusMessageFontSize = 23;
       } else {
-        // Если всё в порядке — короткий текст, увеличиваем шрифт
-        statusMessageText = "Всё нормально, можете молиться";
+        statusMessageText = SajdahLocalization().translate('all_good');
         statusMessageColor = Colors.greenAccent;
         statusMessageFontSize = 23;
       }
 
-      // Таймер авто-скрытия плашки ровно через 10 секунд
       Timer(const Duration(seconds: 5), () {
         if (mounted) {
           setState(() {
@@ -176,7 +271,6 @@ class _SajdahScreenState extends State<SajdahScreen> {
       });
     }
 
-    // 2. Инициализируем базовый кадр
     if (baselineFrame == null) {
       baselineFrame = List<int>.from(bytes);
       if (mounted) {
@@ -190,7 +284,6 @@ class _SajdahScreenState extends State<SajdahScreen> {
     int changedPixels = 0;
     int totalChecked = 0;
 
-    // 3. АВТООПРЕДЕЛЕНИЕ ГЕОМЕТРИИ (ВЕРХ ТЕЛЕФОНА)
     final int sensorOrientation = controller?.description.sensorOrientation ?? 270;
 
     int startX = 0;
@@ -209,7 +302,6 @@ class _SajdahScreenState extends State<SajdahScreen> {
       endY = height ~/ 2;
     }
 
-    // 4. Сканируем только вычисленную область
     for (int y = startY; y < endY; y += SajdahConfig.pixelStep) {
       for (int x = startX; x < endX; x += SajdahConfig.pixelStep) {
 
@@ -227,14 +319,14 @@ class _SajdahScreenState extends State<SajdahScreen> {
       }
     }
 
-    if (mounted) {
-      setState(() {
-        currentBrightness = avgBrightness;
-        changePercentage = totalChecked > 0 ? (changedPixels / totalChecked) : 0;
-      });
+    final double computedPercentage = totalChecked > 0 ? (changedPixels / totalChecked) : 0;
+    changePercentage = computedPercentage;
+    currentBrightness = avgBrightness;
+
+    if (mounted && isDebugMode) {
+      setState(() {});
     }
 
-    // 5. Логика детекции суджуда
     if (changePercentage > SajdahConfig.detectionThreshold) {
       confirmCount++;
       if (confirmCount >= SajdahConfig.framesToConfirm && !isSajdaDetected) {
@@ -255,29 +347,24 @@ class _SajdahScreenState extends State<SajdahScreen> {
     }
 
     lastSajdaTime = now;
-    Vibration.vibrate(duration: 100);
+
+    // Проверяем настройку вибрации перед запуском мотора
+    if (SajdahStorage().getVibrationEnabled()) {
+      Vibration.vibrate(duration: 100);
+    }
 
     setState(() {
       rakatCount += 0.5;
     });
   }
 
-  Future<void> resetAll() async {
-    setState(() {
-      rakatCount = 0;
-      baselineFrame = null;
-      confirmCount = 0;
-    });
-
-    if (controller != null && controller!.value.isInitialized) {
-      await controller!.setExposureMode(FocusMode.locked == true ? ExposureMode.auto : ExposureMode.auto);
-      await Future.delayed(const Duration(milliseconds: 500));
-      await controller!.setExposureMode(ExposureMode.locked);
-    }
+  void resetAll() {
+    SajdahApp.restartApp(context);
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     controller?.dispose();
     WakelockPlus.disable();
     super.dispose();
@@ -290,7 +377,7 @@ class _SajdahScreenState extends State<SajdahScreen> {
     return Scaffold(
       body: Stack(
         children: [
-          // 1. ЗАДНИЙ ФОН: Камера (если включена)
+          // Главный экран приложения
           if (showCameraPreview && controller != null && controller!.value.isInitialized)
             SizedBox(
               width: size.width,
@@ -301,22 +388,19 @@ class _SajdahScreenState extends State<SajdahScreen> {
               ),
             ),
 
-          // 2. СЛОЙ UI: глубокое затемнение поверх превью для максимальной скрытности
           if (showCameraPreview)
             Container(color: Colors.black.withOpacity(0.75)),
 
-          // 3. КОНТЕНТ UI
           Center(
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                const Spacer(flex: 3), // Центрируем контент более плавно
+                const Spacer(flex: 3),
 
-                _buildStatLabel("РАКААТЫ", Colors.white38, 35),
+                _buildStatLabel(SajdahLocalization().translate('rakats'), Colors.white38, 35),
 
                 const SizedBox(height: 5),
 
-                // Нажатие на цифру ракаатов тоже переключает камеру в дебаге
                 GestureDetector(
                   onTap: isDebugMode
                       ? () => setState(() => showCameraPreview = !showCameraPreview)
@@ -327,7 +411,6 @@ class _SajdahScreenState extends State<SajdahScreen> {
                   ),
                 ),
 
-                // Минималистичная контурная кнопка сброса (не отвлекает)
                 IconButton(
                   onPressed: resetAll,
                   icon: const Icon(Icons.refresh_rounded),
@@ -342,9 +425,8 @@ class _SajdahScreenState extends State<SajdahScreen> {
 
                 const SizedBox(height: 10),
 
-                // Премиальная мягкая плашка предупреждения (только для отсутствия физической камеры)
                 if (!isFrontCameraFinded)
-                  _buildWarningCard("Фронтальная камера не найдена, используйте кнопку '+1'"),
+                  _buildWarningCard(SajdahLocalization().translate('no_front_camera')),
 
                 if (isDebugMode) ...[
                   const SizedBox(height: 20),
@@ -355,51 +437,39 @@ class _SajdahScreenState extends State<SajdahScreen> {
 
                 const Spacer(flex: 2),
 
-                const SizedBox(height: 130), // Фиксированный задел под нижнюю матовую кнопку
+                const SizedBox(height: 130),
               ],
             ),
           ),
 
-          // Иконка жука (приглушена, чтобы не светиться в углу)
-          Positioned(
+          // КНОПКА НАСТРОЕК (В верхнем левом углу)
+          PositionedDirectional(
             top: 45,
-            right: 20,
+            start: 20, // Вместо left: 20
             child: IconButton(
-              icon: Icon(
-                isDebugMode ? Icons.bug_report : Icons.bug_report_outlined,
-                color: isDebugMode ? Colors.orangeAccent.withOpacity(0.6) : Colors.white12,
-                size: 35,
-              ),
-              onPressed: () {
-                setState(() {
-                  isDebugMode = !isDebugMode;
-                  if (!isDebugMode) {
-                    showCameraPreview = false;
-                  }
-                });
-              },
+              icon: const Icon(Icons.settings_outlined, color: Colors.white30, size: 32),
+              onPressed: toggleSettings,
             ),
           ),
 
-          // --- ВЕРХНИЕ СТАТУСНЫЕ УВЕДОМЛЕНИЯ ---
           if (isInitializing)
             Positioned(
               top: 52,
               left: 80,
               right: 80,
               child: Text(
-                "Секунду, настраиваем камеру",
+                SajdahLocalization().translate('setting_up_camera'),
                 textAlign: TextAlign.center,
                 style: TextStyle(
                     color: Colors.yellow.withOpacity(0.7),
-                    fontSize: 23, // Изменено: Оптимальный размер под среднюю строку загрузки
+                    fontSize: 23,
                     fontWeight: FontWeight.w400,
                     letterSpacing: 0.5
                 ),
               ),
             ),
 
-          if (showStatusMessage)
+          if (showStatusMessage && !isSettingsOpen)
             Positioned(
               top: 52,
               left: 80,
@@ -409,16 +479,133 @@ class _SajdahScreenState extends State<SajdahScreen> {
                 textAlign: TextAlign.center,
                 style: TextStyle(
                     color: statusMessageColor.withOpacity(0.8),
-                    fontSize: statusMessageFontSize, // Изменено: Размер теперь зависит от выбранного текста
+                    fontSize: statusMessageFontSize,
                     fontWeight: FontWeight.w400,
                     letterSpacing: 0.3
                 ),
               ),
             ),
+
+          // ПАНЕЛЬ НАСТРОЕК СВЕРХУ (Оверлей)
+          if (isSettingsOpen) _buildSettingsOverlay(size),
         ],
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
-      floatingActionButton: _buildManualButton(),
+      floatingActionButton: isSettingsOpen ? null : _buildManualButton(),
+    );
+  }
+
+  // --- Виджет Оверлея Настроек ---
+  Widget _buildSettingsOverlay(Size size) {
+    final localization = SajdahLocalization();
+    final currentLang = localization.currentLocale;
+
+    return Positioned.fill(
+      child: Container(
+        color: Colors.black.withOpacity(0.95),
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 45),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  localization.translate('settings_title'),
+                  style: const TextStyle(color: Colors.white70, fontSize: 22, fontWeight: FontWeight.w300, letterSpacing: 2),
+                ),
+                IconButton(
+                  // Убрали const, так как .withOpacity вычисляется в рантайме
+                  icon: Icon(Icons.close_rounded, color: Colors.white.withOpacity(0.5), size: 30),
+                  onPressed: toggleSettings,
+                ),
+              ],
+            ),
+            const SizedBox(height: 40),
+
+            _buildSettingRow(
+              title: localization.translate('setting_debug'),
+              value: isDebugMode,
+              onChanged: (val) async {
+                await SajdahStorage().saveDebugMode(val);
+                setState(() {
+                  isDebugMode = val;
+                  if (!isDebugMode) showCameraPreview = false;
+                });
+              },
+            ),
+            const Divider(color: Colors.white10, height: 30),
+
+            _buildSettingRow(
+              title: localization.translate('setting_vibration'),
+              value: SajdahStorage().getVibrationEnabled(),
+              onChanged: (val) async {
+                await SajdahStorage().saveVibrationEnabled(val);
+                setState(() {});
+              },
+            ),
+            const Divider(color: Colors.white10, height: 40),
+
+            Row(
+              children: [
+                _buildLangButton(label: "Рус", isActive: currentLang == 'ru', onTap: () => localization.setLanguage('ru')),
+                const SizedBox(width: 12),
+                _buildLangButton(label: "Eng", isActive: currentLang == 'en', onTap: () => localization.setLanguage('en')),
+                const SizedBox(width: 12),
+                _buildLangButton(label: "العربية", isActive: currentLang == 'ar', onTap: () => localization.setLanguage('ar')),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSettingRow({required String title, required bool value, required ValueChanged<bool> onChanged}) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(title, style: const TextStyle(color: Colors.white60, fontSize: 18, fontWeight: FontWeight.w300)),
+        Switch.adaptive(
+          value: value,
+          activeColor: Colors.greenAccent.withOpacity(0.6),
+          activeTrackColor: Colors.greenAccent.withOpacity(0.2),
+          inactiveThumbColor: Colors.white.withOpacity(0.2), // Исправлено здесь
+          inactiveTrackColor: Colors.white.withOpacity(0.05),
+          onChanged: onChanged,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildLangButton({required String label, required bool isActive, required VoidCallback onTap}) {
+    return Expanded(
+      child: GestureDetector(
+        onTap: () async {
+          onTap();
+          setState(() {});
+        },
+        child: Container(
+          height: 55,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: isActive ? Colors.white.withOpacity(0.05) : Colors.transparent,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: isActive ? Colors.white.withOpacity(0.25) : Colors.white.withOpacity(0.05),
+              width: 1,
+            ),
+          ),
+          child: Text(
+            label,
+            style: TextStyle(
+              color: isActive ? Colors.white.withOpacity(0.8) : Colors.white30, // Исправлено здесь
+              fontSize: 16,
+              fontWeight: isActive ? FontWeight.w400 : FontWeight.w300,
+            ),
+          ),
+        ),
+      ),
     );
   }
 
