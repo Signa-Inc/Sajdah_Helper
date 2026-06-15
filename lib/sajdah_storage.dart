@@ -22,4 +22,12 @@ class SajdahStorage {
   // --- ВИБРАЦИЯ (По умолчанию: true) ---
   bool getVibrationEnabled() => _prefs.getBool('vibration_enabled') ?? true;
   Future<void> saveVibrationEnabled(bool value) async => await _prefs.setBool('vibration_enabled', value);
+
+  // --- РЕЖИМ "НЕ БЕСПОКОИТЬ" (По умолчанию: true) ---
+  bool getDndEnabled() => _prefs.getBool('dnd_enabled') ?? true;
+  Future<void> saveDndEnabled(bool value) async => await _prefs.setBool('dnd_enabled', value);
+
+  // --- ПЕРВЫЙ ЗАПУСК / ИНСТРУКЦИЯ ---
+  bool isFirstLaunch() => _prefs.getBool('is_first_launch') ?? true;
+  Future<void> setFirstLaunchCompleted() async => await _prefs.setBool('is_first_launch', false);
 }
