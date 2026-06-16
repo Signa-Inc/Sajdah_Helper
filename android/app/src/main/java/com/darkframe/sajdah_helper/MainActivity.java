@@ -50,18 +50,25 @@ public class MainActivity extends FlutterActivity {
                             break;
 
                         case "activateDnd":
-                            notificationManager.setInterruptionFilter(3); // Включаем полную тишину (INTERRUPT_FILTER_NONE)
+                            // ЗАЩИТА: Если состояние еще не сохранено (например, при возврате из бэкграунда),
+                            // делаем слепок прямо сейчас, ПЕРЕД тем как включить тишину.
+                            if (!isStateSaved) {
+                                initialDndState = notificationManager.getCurrentInterruptionFilter();
+                                isStateSaved = true;
+                            }
+                            notificationManager.setInterruptionFilter(3); // Включаем полную тишину
                             result.success(true);
                             break;
 
                         case "inactivateDnd":
-                            notificationManager.setInterruptionFilter(1); // Включаем всё звуки (INTERRUPT_FILTER_ALL)
+                            notificationManager.setInterruptionFilter(1); // Включаем все звуки (INTERRUPT_FILTER_ALL)
                             result.success(true);
                             break;
 
                         case "restoreDnd":
                             if (isStateSaved) {
-                                notificationManager.setInterruptionFilter(initialDndState); // Возвращаем то, что сохранили
+                                notificationManager.setInterruptionFilter(initialDndState);
+                                isStateSaved = false; // Сбрасываем флаг сессии
                             }
                             result.success(true);
                             break;
@@ -77,5 +84,26 @@ public class MainActivity extends FlutterActivity {
                             break;
                     }
                 });
+    }
+
+    @Override
+    protected void onDestroy() {
+        restoreDndNative();
+        super.onDestroy();
+    }
+
+    @Override
+    protected void onStop() {
+        restoreDndNative();
+        super.onStop();
+    }
+    private void restoreDndNative() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && isStateSaved) {
+            NotificationManager notificationManager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+            if (notificationManager != null && notificationManager.isNotificationPolicyAccessGranted()) {
+                notificationManager.setInterruptionFilter(initialDndState);
+                isStateSaved = false; // Очищаем сессию
+            }
+        }
     }
 }

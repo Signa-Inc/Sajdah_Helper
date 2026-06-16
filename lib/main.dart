@@ -59,6 +59,18 @@ class _SajdahAppState extends State<SajdahApp> {
   Key _key = UniqueKey();
   bool _showOnboarding = SajdahStorage().isFirstLaunch();
 
+  @override
+  void initState() {
+    super.initState();
+    WakelockPlus.enable(); // Включаем один раз на уровне всего приложения
+  }
+
+  @override
+  void dispose() {
+    WakelockPlus.disable(); // Выключаем только при закрытии приложения
+    super.dispose();
+  }
+
   void restart() {
     setState(() {
       _key = UniqueKey();
@@ -160,7 +172,6 @@ class _SajdahOnboardingScreenState extends State<SajdahOnboardingScreen> {
   @override
   void initState() {
     super.initState();
-    WakelockPlus.enable();
     _initStep();
   }
 
@@ -660,15 +671,21 @@ class _SajdahScreenState extends State<SajdahScreen> with WidgetsBindingObserver
     });
   }
 
-  void resetAll() {
-    SajdahApp.restartApp(context);
+  void resetAll() async {
+    if (_isDndNativeActive) {
+      _isDndNativeActive = false;
+      await _executeDndCommand('restoreDnd');
+    }
+
+    if (mounted) {
+      SajdahApp.restartApp(context);
+    }
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     controller?.dispose();
-    WakelockPlus.disable();
     _executeDndCommand('restoreDnd');    // Возвращаем звук
     _executeDndCommand('resetSession');  // Закрываем сессию в Java
     super.dispose();
