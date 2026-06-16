@@ -359,6 +359,7 @@ class _SajdahScreenState extends State<SajdahScreen> with WidgetsBindingObserver
   CameraController? controller;
   double rakatCount = 0;
 
+  int _framesToSkip = 10; // Сколько кадров нужно проигнорировать для стабилизации сенсора
   List<int>? baselineFrame;
   bool isSajdaDetected = false;
   DateTime? lastSajdaTime;
@@ -402,8 +403,6 @@ class _SajdahScreenState extends State<SajdahScreen> with WidgetsBindingObserver
   }
 
   @override
-  @override
-  @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     final dndEnabled = SajdahStorage().getDndEnabled();
 
@@ -436,6 +435,7 @@ class _SajdahScreenState extends State<SajdahScreen> with WidgetsBindingObserver
       controller?.stopImageStream();
     } else if (state == AppLifecycleState.resumed) {
       if (isFrontCameraFinded && !controller!.value.isStreamingImages) {
+        _framesToSkip = 10;
         controller?.startImageStream(analyzeFrame);
       }
     }
@@ -482,12 +482,15 @@ class _SajdahScreenState extends State<SajdahScreen> with WidgetsBindingObserver
       await controller!.initialize();
 
       if (controller!.value.isInitialized) {
+        // Даём камере 300 миллисекунд адаптироваться к свету в комнате перед локом
+        await Future.delayed(const Duration(milliseconds: 300));
         await controller!.setFocusMode(FocusMode.locked);
         await controller!.setExposureMode(ExposureMode.locked);
         await controller!.lockCaptureOrientation(DeviceOrientation.portraitUp);
       }
 
       if (!isSettingsOpen) {
+        _framesToSkip = 5; // На всякий случай пропускаем первые кадры и при старте
         controller!.startImageStream(analyzeFrame);
       }
     } catch (e) {
@@ -521,6 +524,12 @@ class _SajdahScreenState extends State<SajdahScreen> with WidgetsBindingObserver
 
   void analyzeFrame(CameraImage image) {
     if(!isFrontCameraFinded || isSettingsOpen) return;
+
+    // Игнорируем нестабильные кадры после рестарта стрима
+    if (_framesToSkip > 0) {
+      _framesToSkip--;
+      return;
+    }
 
     final now = DateTime.now();
     if (_lastFrameTime != null &&
