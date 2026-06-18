@@ -20,6 +20,7 @@ class SajdahConfig {
   static const int cooldownVibrationSeconds = 2;
   static const double minBrightessThreshold = 100.0;
   static const int frameThrottleMs = 50;
+  static const int stableFramesToUpdateBaseline = 8;
 }
 
 late List<CameraDescription> _cameras;
@@ -394,6 +395,10 @@ class _SajdahScreenState extends State<SajdahScreen> with WidgetsBindingObserver
 
   bool hasCheckedInitialBrightness = false;
 
+  int _stableFrameCount = 0;
+  double _lastRakatCountAtBaselineUpdate = 0;
+  bool _baselineUpdatePending = false;
+
   static const platform = MethodChannel('com.darkframe.sajdah_helper/dnd');
 
   @override
@@ -660,6 +665,24 @@ class _SajdahScreenState extends State<SajdahScreen> with WidgetsBindingObserver
     } else if (changePercentage < SajdahConfig.resetThreshold) {
       confirmCount = 0;
       isSajdaDetected = false;
+
+      // Помечаем что нужно обновить baseline, если ракаат изменился
+      if (rakatCount > _lastRakatCountAtBaselineUpdate) {
+        _baselineUpdatePending = true;
+      }
+
+      // Ждём стабильности несколько кадров подряд
+      if (_baselineUpdatePending) {
+        _stableFrameCount++;
+        if (_stableFrameCount >= SajdahConfig.stableFramesToUpdateBaseline) {
+          baselineFrame = List<int>.from(bytes);
+          _lastRakatCountAtBaselineUpdate = rakatCount;
+          _baselineUpdatePending = false;
+          _stableFrameCount = 0;
+        }
+      } else {
+        _stableFrameCount = 0;
+      }
     }
   }
 
