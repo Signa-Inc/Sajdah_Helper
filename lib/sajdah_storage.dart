@@ -15,8 +15,8 @@ class SajdahStorage {
   String? getLanguage() => _prefs.getString('language_code');
   Future<void> saveLanguage(String langCode) async => await _prefs.setString('language_code', langCode);
 
-  // --- РЕЖИМ ОТЛАДКИ (По умолчанию: false) ---
-  bool getDebugMode() => _prefs.getBool('debug_mode') ?? false;
+  // --- РЕЖИМ ОТЛАДКИ (По умолчанию: true) ---
+  bool getDebugMode() => _prefs.getBool('debug_mode') ?? true;
   Future<void> saveDebugMode(bool value) async => await _prefs.setBool('debug_mode', value);
 
   // --- ВИБРАЦИЯ (По умолчанию: true) ---

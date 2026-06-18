@@ -46,7 +46,6 @@ class SajdahApp extends StatefulWidget {
     context.findAncestorStateOfType<_SajdahAppState>()?.restart();
   }
 
-  // ИИ КОММЕНТАРИЙ: Новый статический метод для мягкого вызова инструкции во время текущей сессии
   static void showTutorial(BuildContext context) {
     context.findAncestorStateOfType<_SajdahAppState>()?.openTutorialDynamically();
   }
@@ -78,7 +77,7 @@ class _SajdahAppState extends State<SajdahApp> {
     });
   }
 
-  // ИИ КОММЕНТАРИЙ: Включает показ инструкции локально без изменения SharedPreferences флагов первого запуска
+  // Включает показ инструкции локально без изменения SharedPreferences флагов первого запуска
   void openTutorialDynamically() {
     setState(() {
       _showOnboarding = true;
@@ -362,7 +361,7 @@ class SajdahScreen extends StatefulWidget {
 }
 
 class _SajdahScreenState extends State<SajdahScreen> with WidgetsBindingObserver {
-  // ИИ КОММЕНТАРИЙ: Канал связи с нативной частью Android для управления DND
+  // Канал связи с нативной частью Android для управления DND
   static const _dndChannel = MethodChannel('com.darkframe.sajdah_helper/dnd');
 
   bool _isDndNativeActive = false; // Контролирует, запущен ли DND в данный момент на уровне системы
@@ -382,12 +381,13 @@ class _SajdahScreenState extends State<SajdahScreen> with WidgetsBindingObserver
   bool showCameraPreview = false;
   bool isFrontCameraFinded = true;
 
-  bool isDebugMode = false;
+  bool isDebugMode = true;
   bool isSettingsOpen = false;
 
   DateTime? _lastFrameTime;
 
   bool isInitializing = true;
+  int _warmupFrames = 0;
   bool showStatusMessage = false;
   String statusMessageText = "";
   Color statusMessageColor = Colors.yellow;
@@ -452,7 +452,7 @@ class _SajdahScreenState extends State<SajdahScreen> with WidgetsBindingObserver
     }
   }
 
-  // ИИ КОММЕНТАРИЙ: Метод вызова нативного кода для включения/выключения режима "Не беспокоить"
+  // Метод вызова нативного кода для включения/выключения режима "Не беспокоить"
   Future<void> _executeDndCommand(String command) async {
     if (Platform.isIOS) return;
 
@@ -464,45 +464,48 @@ class _SajdahScreenState extends State<SajdahScreen> with WidgetsBindingObserver
   }
 
   Future<void> initCamera() async {
-    if (_cameras.isEmpty) {
+    if (_cameras.isEmpty) { //
       debugPrint("Камеры не найдены на устройстве");
       setState(() {
         isInitializing = false;
       });
       return;
-    }
+    } //
 
-    CameraDescription selectedCamera = _cameras.firstWhere(
+    CameraDescription selectedCamera = _cameras.firstWhere( //
           (camera) => camera.lensDirection == CameraLensDirection.front,
       orElse: () {
         isFrontCameraFinded = false;
         return _cameras.first;
       },
-    );
+    ); //
 
-    if (!isFrontCameraFinded) {
+    if (!isFrontCameraFinded) { //
       setState(() {
         isInitializing = false;
       });
       return;
-    }
+    } //
 
-    controller = CameraController(selectedCamera, ResolutionPreset.low, enableAudio: false);
+    controller = CameraController(selectedCamera, ResolutionPreset.low, enableAudio: false); //
 
     try {
-      await controller!.initialize();
+      await controller!.initialize(); //
 
-      if (controller!.value.isInitialized) {
-        // Даём камере 300 миллисекунд адаптироваться к свету в комнате перед локом
-        await Future.delayed(const Duration(milliseconds: 300));
-        await controller!.setFocusMode(FocusMode.locked);
-        await controller!.setExposureMode(ExposureMode.locked);
-        await controller!.lockCaptureOrientation(DeviceOrientation.portraitUp);
-      }
+      // Запускаем стрим только если панель настроек закрыта
+      if (!isSettingsOpen && controller!.value.isInitialized) { //
+        _warmupFrames = 30; // Пропустим первые 30 кадров (~1 сек), чтобы сенсор адаптировался к свету
+        await controller!.startImageStream(analyzeFrame);
 
-      if (!isSettingsOpen) {
-        _framesToSkip = 5; // На всякий случай пропускаем первые кадры и при старте
-        controller!.startImageStream(analyzeFrame);
+        // Даем камере «продышаться» на запущенном стриме перед фиксацией
+        await Future.delayed(const Duration(milliseconds: 500));
+
+        // Теперь жестко блокируем экспозицию и фокус НА УЖЕ ЖИВОМ СТРИМЕ
+        if (controller!.value.isInitialized && !isSettingsOpen) { //
+          await controller!.setFocusMode(FocusMode.locked);
+          await controller!.setExposureMode(ExposureMode.locked);
+          await controller!.lockCaptureOrientation(DeviceOrientation.portraitUp);
+        }
       }
     } catch (e) {
       debugPrint("Ошибка камеры: $e");
@@ -518,7 +521,6 @@ class _SajdahScreenState extends State<SajdahScreen> with WidgetsBindingObserver
     setState(() {
       isSettingsOpen = !isSettingsOpen;
     });
-
     if (isSettingsOpen) {
       if (controller != null && controller!.value.isStreamingImages) {
         await controller?.stopImageStream();
@@ -527,7 +529,15 @@ class _SajdahScreenState extends State<SajdahScreen> with WidgetsBindingObserver
       if (isFrontCameraFinded && controller != null && controller!.value.isInitialized) {
         if (!controller!.value.isStreamingImages) {
           baselineFrame = null;
-          controller!.startImageStream(analyzeFrame);
+          _warmupFrames = 20; // Скипаем первые кадры после переключения
+          await controller!.startImageStream(analyzeFrame);
+
+          // Повторно лочим параметры после перезапуска стрима
+          await Future.delayed(const Duration(milliseconds: 500));
+          if (controller!.value.isInitialized && !isSettingsOpen) {
+            await controller!.setFocusMode(FocusMode.locked);
+            await controller!.setExposureMode(ExposureMode.locked);
+          }
         }
       }
     }
@@ -537,8 +547,8 @@ class _SajdahScreenState extends State<SajdahScreen> with WidgetsBindingObserver
     if(!isFrontCameraFinded || isSettingsOpen) return;
 
     // Игнорируем нестабильные кадры после рестарта стрима
-    if (_framesToSkip > 0) {
-      _framesToSkip--;
+    if (_warmupFrames > 0) {
+      _warmupFrames--;
       return;
     }
 
@@ -653,7 +663,7 @@ class _SajdahScreenState extends State<SajdahScreen> with WidgetsBindingObserver
     }
   }
 
-  void processSajda() {
+  void processSajda() async {
     final now = DateTime.now();
     if (lastSajdaTime != null &&
         now.difference(lastSajdaTime!).inSeconds < SajdahConfig.cooldownVibrationSeconds) {
@@ -663,7 +673,15 @@ class _SajdahScreenState extends State<SajdahScreen> with WidgetsBindingObserver
     lastSajdaTime = now;
 
     if (SajdahStorage().getVibrationEnabled()) {
-      Vibration.vibrate(duration: 100);
+      if (_isDndNativeActive) {
+        await _executeDndCommand('inactivateDnd');
+        await Future.delayed(const Duration(milliseconds: 100));
+        await Vibration.vibrate(duration: 100);
+        await Future.delayed(const Duration(milliseconds: 100));
+        await _executeDndCommand('activateDnd');
+      } else {
+        Vibration.vibrate(duration: 100);
+      }
     }
 
     setState(() {
@@ -842,7 +860,7 @@ class _SajdahScreenState extends State<SajdahScreen> with WidgetsBindingObserver
             ),
             const Divider(color: Colors.white10, height: 25),
 
-            // ИИ КОММЕНТАРИЙ: Строка управления режимом "Не беспокоить"
+            // Строка управления режимом "Не беспокоить"
             if (!Platform.isIOS) ... [ // Строка отобразится ТОЛЬКО на Android
               _buildSettingRow(
                 title: localization.translate('setting_dnd'),
@@ -868,7 +886,7 @@ class _SajdahScreenState extends State<SajdahScreen> with WidgetsBindingObserver
               const Divider(color: Colors.white10, height: 25),
             ],
 
-            // ИИ КОММЕНТАРИЙ: Измененный обработчик перезапуска обучения без сброса флагов хранилища
+            // Измененный обработчик перезапуска обучения без сброса флагов хранилища
             GestureDetector(
               onTap: () {
                 if (mounted) {
@@ -920,7 +938,7 @@ class _SajdahScreenState extends State<SajdahScreen> with WidgetsBindingObserver
               ],
             ),
 
-            // ИИ КОММЕНТАРИЙ: Прижимаем плашку с версией и ником к низу оверлея через Spacer
+            // Прижимаем плашку с версией и ником к низу оверлея через Spacer
             const Spacer(),
             Center(
               child: GestureDetector(
