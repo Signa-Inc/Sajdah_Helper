@@ -5,8 +5,8 @@ import 'dart:async';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:flutter/services.dart';
 import 'sajdah_localization.dart';
-import 'sajdah_storage.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
+import 'sajdah_storage.dart';
 import 'package:video_player/video_player.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'dart:io'; // Обязательно для проверки Platform.isIOS
@@ -78,7 +78,7 @@ class _SajdahAppState extends State<SajdahApp> {
     });
   }
 
-  // Включает показ инструкции локально без изменения SharedPreferences флагов первого запуска
+  // Включает показ инструкции
   void openTutorialDynamically() {
     setState(() {
       _showOnboarding = true;
@@ -101,10 +101,9 @@ class _SajdahAppState extends State<SajdahApp> {
             ),
             locale: Locale(currentLang),
             supportedLocales: const [Locale('ru'), Locale('en'), Locale('ar')],
-            localizationsDelegates: const [
+            localizationsDelegates: [
               GlobalMaterialLocalizations.delegate,
               GlobalWidgetsLocalizations.delegate,
-              GlobalCupertinoLocalizations.delegate,
             ],
             home: _showOnboarding
                 ? SajdahOnboardingScreen(
@@ -248,7 +247,7 @@ class _SajdahOnboardingScreenState extends State<SajdahOnboardingScreen> {
       if (_videoController != null) {
         await _videoController!.dispose();
       }
-      // Безопасное сохранение состояния — не перезапишет True, если мы запустили из настроек
+      // Безопасное сохранение состояния - не перезапишет True, если мы запустили из настроек
       if (SajdahStorage().isFirstLaunch()) {
         await SajdahStorage().setFirstLaunchCompleted();
       }
@@ -362,22 +361,19 @@ class SajdahScreen extends StatefulWidget {
 }
 
 class _SajdahScreenState extends State<SajdahScreen> with WidgetsBindingObserver {
-  // Канал связи с нативной частью Android для управления DND
-  static const _dndChannel = MethodChannel('com.darkframe.sajdah_helper/dnd');
-
   bool _isDndNativeActive = false; // Контролирует, запущен ли DND в данный момент на уровне системы
 
   CameraController? controller;
   double rakatCount = 0;
 
   int _framesToSkip = 10; // Сколько кадров нужно проигнорировать для стабилизации сенсора
-  List<int>? baselineFrame;
+  Uint8List? baselineFrame;
   bool isSajdaDetected = false;
   DateTime? lastSajdaTime;
   int confirmCount = 0;
 
-  double currentBrightness = 0.0;
-  double changePercentage = 0;
+  final ValueNotifier<double> _brightnessNotifier = ValueNotifier(0.0);
+  final ValueNotifier<double> _changePercentageNotifier = ValueNotifier(0.0);
 
   bool showCameraPreview = false;
   bool isFrontCameraFinded = true;
@@ -399,6 +395,7 @@ class _SajdahScreenState extends State<SajdahScreen> with WidgetsBindingObserver
   double _lastRakatCountAtBaselineUpdate = 0;
   bool _baselineUpdatePending = false;
 
+  // Канал связи с нативной частью Android для управления DND
   static const platform = MethodChannel('com.darkframe.sajdah_helper/dnd');
 
   @override
@@ -422,12 +419,12 @@ class _SajdahScreenState extends State<SajdahScreen> with WidgetsBindingObserver
   void didChangeAppLifecycleState(AppLifecycleState state) {
     final dndEnabled = SajdahStorage().getDndEnabled();
 
-    // 1. БЛОК DND И ЭКРАНА (WAKELOCK)
+    // БЛОК DND И ЭКРАНА (WAKELOCK)
     if (state == AppLifecycleState.resumed) {
-      // РЕШЕНИЕ ПРОБЛЕМЫ №1: Принудительно возвращаем Wakelock при возврате в приложение
+      // Принудительно возвращаем Wakelock при возврате в приложение
       WakelockPlus.enable();
 
-      // РЕШЕНИЕ ПРОБЛЕМЫ №2: Включаем DND только если он разрешен в настройках и еще НЕ активен
+      // Включаем DND только если он разрешен в настройках и еще НЕ активен
       if (dndEnabled && !_isDndNativeActive) {
         _executeDndCommand('activateDnd');
         _isDndNativeActive = true;
@@ -437,14 +434,13 @@ class _SajdahScreenState extends State<SajdahScreen> with WidgetsBindingObserver
         state == AppLifecycleState.paused ||
         state == AppLifecycleState.detached) {
 
-      // РЕШЕНИЕ ПРОБЛЕМЫ №2: Снимаем DND строго один раз при любом выходе/сворачивании/уничтожении
+      // Снимаем DND строго один раз при любом выходе/сворачивании/уничтожении
       if (dndEnabled && _isDndNativeActive) {
         _executeDndCommand('restoreDnd');
         _isDndNativeActive = false; // Сбрасываем флаг, повторные эвенты сюда не пройдут
       }
     }
 
-    // 2. БЛОК КАМЕРЫ (Оставляем без изменений)
     if (controller == null || !controller!.value.isInitialized || isSettingsOpen) return;
 
     if (state == AppLifecycleState.inactive || state == AppLifecycleState.paused) {
@@ -469,36 +465,36 @@ class _SajdahScreenState extends State<SajdahScreen> with WidgetsBindingObserver
   }
 
   Future<void> initCamera() async {
-    if (_cameras.isEmpty) { //
+    if (_cameras.isEmpty) {
       debugPrint("Камеры не найдены на устройстве");
       setState(() {
         isInitializing = false;
       });
       return;
-    } //
+    }
 
-    CameraDescription selectedCamera = _cameras.firstWhere( //
+    CameraDescription selectedCamera = _cameras.firstWhere(
           (camera) => camera.lensDirection == CameraLensDirection.front,
       orElse: () {
         isFrontCameraFinded = false;
         return _cameras.first;
       },
-    ); //
+    );
 
-    if (!isFrontCameraFinded) { //
+    if (!isFrontCameraFinded) {
       setState(() {
         isInitializing = false;
       });
       return;
-    } //
+    }
 
-    controller = CameraController(selectedCamera, ResolutionPreset.low, enableAudio: false); //
+    controller = CameraController(selectedCamera, ResolutionPreset.low, enableAudio: false);
 
     try {
-      await controller!.initialize(); //
+      await controller!.initialize();
 
       // Запускаем стрим только если панель настроек закрыта
-      if (!isSettingsOpen && controller!.value.isInitialized) { //
+      if (!isSettingsOpen && controller!.value.isInitialized) {
         _warmupFrames = 30; // Пропустим первые 30 кадров (~1 сек), чтобы сенсор адаптировался к свету
         await controller!.startImageStream(analyzeFrame);
 
@@ -506,7 +502,7 @@ class _SajdahScreenState extends State<SajdahScreen> with WidgetsBindingObserver
         await Future.delayed(const Duration(milliseconds: 500));
 
         // Теперь жестко блокируем экспозицию и фокус НА УЖЕ ЖИВОМ СТРИМЕ
-        if (controller!.value.isInitialized && !isSettingsOpen) { //
+        if (controller!.value.isInitialized && !isSettingsOpen) {
           await controller!.setFocusMode(FocusMode.locked);
           await controller!.setExposureMode(ExposureMode.locked);
           await controller!.lockCaptureOrientation(DeviceOrientation.portraitUp);
@@ -514,9 +510,11 @@ class _SajdahScreenState extends State<SajdahScreen> with WidgetsBindingObserver
       }
     } catch (e) {
       debugPrint("Ошибка камеры: $e");
-      setState(() {
-        isInitializing = false;
-      });
+      if (mounted) {
+        setState(() {
+          isInitializing = false;
+        });
+      }
     }
 
     if (mounted) setState(() {});
@@ -550,8 +548,6 @@ class _SajdahScreenState extends State<SajdahScreen> with WidgetsBindingObserver
 
   void analyzeFrame(CameraImage image) {
     if(!isFrontCameraFinded || isSettingsOpen) return;
-
-    // Игнорируем нестабильные кадры после рестарта стрима
     if (_warmupFrames > 0) {
       _warmupFrames--;
       return;
@@ -586,36 +582,31 @@ class _SajdahScreenState extends State<SajdahScreen> with WidgetsBindingObserver
       isInitializing = false;
       showStatusMessage = true;
 
-      if (avgBrightness <= SajdahConfig.minBrightessThreshold) {
-        statusMessageText = SajdahLocalization().translate('too_dark');
-        statusMessageColor = Colors.redAccent;
-      } else {
-        statusMessageText = SajdahLocalization().translate('all_good');
-        statusMessageColor = Colors.greenAccent;
-      }
+      setState(() {
+        if (avgBrightness <= SajdahConfig.minBrightessThreshold) {
+          statusMessageText = SajdahLocalization().translate('too_dark');
+          statusMessageColor = Colors.redAccent;
+        } else {
+          statusMessageText = SajdahLocalization().translate('all_good');
+          statusMessageColor = Colors.greenAccent;
+        }
+      });
 
       Timer(const Duration(seconds: 5), () {
         if (mounted) {
-          setState(() {
-            showStatusMessage = false;
-          });
+          setState(() { showStatusMessage = false; });
         }
       });
     }
 
     if (baselineFrame == null) {
-      baselineFrame = List<int>.from(bytes);
-      if (mounted) {
-        setState(() {
-          currentBrightness = avgBrightness;
-        });
-      }
+      baselineFrame = Uint8List.fromList(bytes);
+      _brightnessNotifier.value = avgBrightness;
       return;
     }
 
     int changedPixels = 0;
     int totalChecked = 0;
-
     final int sensorOrientation = controller?.description.sensorOrientation ?? 270;
 
     int startX = 0;
@@ -624,58 +615,52 @@ class _SajdahScreenState extends State<SajdahScreen> with WidgetsBindingObserver
     int endY = height;
 
     if (sensorOrientation == 270) {
-      startX = width ~/ 2;
+      startX = width >> 1;
       endX = width;
     } else if (sensorOrientation == 90) {
       startX = 0;
-      endX = width ~/ 2;
+      endX = width >> 1;
     } else {
       startY = 0;
-      endY = height ~/ 2;
+      endY = height >> 1;
     }
 
     for (int y = startY; y < endY; y += SajdahConfig.pixelStep) {
+      int rowOffset = y * bytesPerRow;
       for (int x = startX; x < endX; x += SajdahConfig.pixelStep) {
-        int index = (y * bytesPerRow) + x;
-
+        int index = rowOffset + x;
         if (index < bytes.length && index < baselineFrame!.length) {
           totalChecked++;
           final int diff = (bytes[index] - baselineFrame![index]).abs();
-          if (diff > SajdahConfig.sensitivityThreshold) {
-            changedPixels++;
-          }
+          changedPixels += (diff > SajdahConfig.sensitivityThreshold) ? 1 : 0;
         }
       }
     }
 
     final double computedPercentage = totalChecked > 0 ? (changedPixels / totalChecked) : 0;
-    changePercentage = computedPercentage;
-    currentBrightness = avgBrightness;
 
-    if (mounted && isDebugMode) {
-      setState(() {});
-    }
+    // Мгновенно обновляем значения без вызова тяжелого setState
+    _changePercentageNotifier.value = computedPercentage;
+    _brightnessNotifier.value = avgBrightness;
 
-    if (changePercentage > SajdahConfig.detectionThreshold) {
+    if (computedPercentage > SajdahConfig.detectionThreshold) {
       confirmCount++;
       if (confirmCount >= SajdahConfig.framesToConfirm && !isSajdaDetected) {
         processSajda();
         isSajdaDetected = true;
       }
-    } else if (changePercentage < SajdahConfig.resetThreshold) {
+    } else if (computedPercentage < SajdahConfig.resetThreshold) {
       confirmCount = 0;
       isSajdaDetected = false;
 
-      // Помечаем что нужно обновить baseline, если ракаат изменился
       if (rakatCount > _lastRakatCountAtBaselineUpdate) {
         _baselineUpdatePending = true;
       }
 
-      // Ждём стабильности несколько кадров подряд
       if (_baselineUpdatePending) {
         _stableFrameCount++;
         if (_stableFrameCount >= SajdahConfig.stableFramesToUpdateBaseline) {
-          baselineFrame = List<int>.from(bytes);
+          baselineFrame = Uint8List.fromList(bytes);
           _lastRakatCountAtBaselineUpdate = rakatCount;
           _baselineUpdatePending = false;
           _stableFrameCount = 0;
@@ -707,9 +692,11 @@ class _SajdahScreenState extends State<SajdahScreen> with WidgetsBindingObserver
       }
     }
 
-    setState(() {
-      rakatCount += 0.5;
-    });
+    if (mounted) {
+      setState(() {
+        rakatCount += 0.5;
+      });
+    }
   }
 
   void resetAll() async {
@@ -729,6 +716,8 @@ class _SajdahScreenState extends State<SajdahScreen> with WidgetsBindingObserver
     controller?.dispose();
     _executeDndCommand('restoreDnd');    // Возвращаем звук
     _executeDndCommand('resetSession');  // Закрываем сессию в Java
+    _brightnessNotifier.dispose();
+    _changePercentageNotifier.dispose();
     super.dispose();
   }
 
@@ -784,12 +773,25 @@ class _SajdahScreenState extends State<SajdahScreen> with WidgetsBindingObserver
                 if (!isFrontCameraFinded)
                   _buildWarningCard(localization.translate('no_front_camera')),
 
-                if (isDebugMode) ...[
-                  const SizedBox(height: 20),
-                  _buildDebugText("${localization.translate('debug_brightness')}${currentBrightness.toStringAsFixed(1)}"),
-                  const SizedBox(height: 5),
-                  _buildDebugText("${localization.translate('debug_mismatch')}${(changePercentage * 100).toStringAsFixed(2)}%"),
-                ],
+                if (isDebugMode)
+                  ValueListenableBuilder<double>(
+                    valueListenable: _brightnessNotifier,
+                    builder: (context, brightness, _) {
+                      return ValueListenableBuilder<double>(
+                        valueListenable: _changePercentageNotifier,
+                        builder: (context, mismatch, _) {
+                          return Column(
+                            children: [
+                              const SizedBox(height: 20),
+                              _buildDebugText("${localization.translate('debug_brightness')}${brightness.toStringAsFixed(1)}"),
+                              const SizedBox(height: 5),
+                              _buildDebugText("${localization.translate('debug_mismatch')}${(mismatch * 100).toStringAsFixed(2)}%"),
+                            ],
+                          );
+                        },
+                      );
+                    },
+                  ),
                 const Spacer(flex: 2),
                 const SizedBox(height: 130),
               ],
@@ -900,7 +902,7 @@ class _SajdahScreenState extends State<SajdahScreen> with WidgetsBindingObserver
                     await _executeDndCommand('activateDnd');
                     _isDndNativeActive = true;
                   } else {
-                    // Если тумблер выключили — моментально возвращаем исходный режим телефона
+                    // Если тумблер выключили - моментально возвращаем исходный режим телефона
                     await _executeDndCommand('restoreDnd');
                     _isDndNativeActive = false;
                   }
