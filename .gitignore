@@ -43,3 +43,12 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+/Build AAB.bat
+/Build AAB (OLD).bat
+/Build APK Split.bat
+/Build APK Split (OLD).bat
+/Build APK Whole.bat
+/pepk.jar
+/pepk_out.zip
+/android/app/proguard-rules.pro
+/rustore_cert.pem

@@ -682,11 +682,7 @@ class _SajdahScreenState extends State<SajdahScreen> with WidgetsBindingObserver
 
     if (SajdahStorage().getVibrationEnabled()) {
       if (_isDndNativeActive) {
-        await _executeDndCommand('inactivateDnd');
-        await Future.delayed(const Duration(milliseconds: 100));
-        await Vibration.vibrate(duration: 100);
-        await Future.delayed(const Duration(milliseconds: 100));
-        await _executeDndCommand('activateDnd');
+        await _executeDndCommand('vibrateWithDndBypassInsideNative');
       } else {
         Vibration.vibrate(duration: 100);
       }
