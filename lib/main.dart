@@ -754,15 +754,18 @@ class _SajdahScreenState extends State<SajdahScreen> with WidgetsBindingObserver
                       150
                   ),
                 ),
-                IconButton(
-                  onPressed: resetAll,
-                  icon: const Icon(Icons.refresh_rounded),
-                  color: Colors.white30,
-                  iconSize: 35,
-                  style: IconButton.styleFrom(
-                    backgroundColor: Colors.white.withOpacity(0.01),
-                    padding: const EdgeInsets.all(14),
-                    side: BorderSide(color: Colors.white.withOpacity(0.04), width: 1),
+                GestureDetector(
+                  onPanStart: (_) => resetAll(),
+                  child: IconButton(
+                    onPressed: resetAll,
+                    icon: const Icon(Icons.refresh_rounded),
+                    color: Colors.white30,
+                    iconSize: 35,
+                    style: IconButton.styleFrom(
+                      backgroundColor: Colors.white.withOpacity(0.01),
+                      padding: const EdgeInsets.all(14),
+                      side: BorderSide(color: Colors.white.withOpacity(0.04), width: 1),
+                    ),
                   ),
                 ),
                 const SizedBox(height: 10),
