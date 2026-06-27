@@ -9,7 +9,7 @@
 
 ## English
 
-An innovative Android application developed with **Flutter** that helps Muslims maintain accurate counts of sujuds and rakats during prayer (Salah). Using the device's camera and advanced frame-comparison algorithms, the app tracks movement in real-time, completely hands-free.
+An innovative Android application developed with **Flutter** that helps Muslims maintain counts of sujuds and rakats during prayer (Salah). Using the device's camera and advanced frame-comparison algorithms, the app tracks movement in real-time, completely hands-free.
 
 ### Key Features
 
@@ -37,7 +37,7 @@ An innovative Android application developed with **Flutter** that helps Muslims 
 
 ## Русский
 
-Инновационное Android-приложение, разработанное на **Flutter**, которое помогает мусульманам безошибочно контролировать количество совершенных суджудов (земных поклонов) и ракаатов во время молитвы. Используя фронтальную камеру устройства и алгоритмы сравнения кадров, приложение отслеживает движения в реальном времени без необходимости прикасаться к экрану.
+Инновационное Android-приложение, разработанное на **Flutter**, которое помогает мусульманам контролировать количество совершенных суджудов (земных поклонов) и ракаатов во время молитвы. Используя фронтальную камеру устройства и алгоритмы сравнения кадров, приложение отслеживает движения в реальном времени без необходимости прикасаться к экрану.
 
 ### Ключевые возможности
 
