@@ -47,6 +47,10 @@ class SajdahLocalization extends ChangeNotifier {
       'onboarding_text_phoneOnFloor': 'Добро пожаловать! Положите телефон на пол перед ковриком (местом земного поклона) экраном вверх, примерно на уровне груди.\n\nУ вас есть время, пока на экране горит жёлтый текст, чтобы принять исходное положение. Если вы успели занять его и загорелся зелёный текст, то можете начинать молиться.',
       'onboarding_text_cameraDetection': 'Фронтальная камера будет автоматически фиксировать каждый поклон (суджуд), когда вы приближаетесь к экрану.',
       'onboarding_text_toDarkInRoom': 'Если в комнате слишком темно, автоподсчёт может работать некорректно (приложение предупредит вас). В этом случае используйте кнопку «+1» внизу экрана.',
+
+      // Специальный ключ текста для панели "toDarkInRoom" на iOS PWA
+      'onboarding_text_toDarkInRoom_ios_pwa': 'Добро пожаловать! Для подсчёта ракаатов используйте кнопку «+1» внизу экрана.\n\nВ ближайшее время мы постараемся добавить функцию автоматического подсчёта ракаатов',
+
       'onboarding_text_warning': 'Внимание!\n\nЕсли вы заметили, что в строке «Несовпадение» значение превышает 10, когда вы находитесь в выпрямленном положении, это означает, что произошёл сбой алгоритма. В таком случае следует нажать кнопку «Перезапустить» - она находится под счётчиком ракаатов.\n\nДанное приложение создано для помощи в молитве и не гарантирует абсолютно безошибочный учёт поклонов. Нажимая «Далее», вы соглашаетесь с тем, что самостоятельно несёте полную ответственность за правильность выполнения молитвы и возможные пропущенные суджуды.',
       'onboarding_text_theEnd': 'Вы всегда можете заново пройти это обучение или изменить другие параметры в настройках приложения.\n\nПриятного использования!',
       'next_button': 'Далее',
@@ -69,6 +73,10 @@ class SajdahLocalization extends ChangeNotifier {
       'onboarding_text_phoneOnFloor': 'Welcome! Place your phone on the floor in front of the prayer mat (the place of prostration) screen up, approximately at chest level.\n\nWhile the yellow text is displayed on the screen, you have time to take your starting position. If you have successfully taken it and the text turns green, you can begin your prayer.',
       'onboarding_text_cameraDetection': 'The front camera will automatically detect each prostration (sajdah) as you move closer to the screen.',
       'onboarding_text_toDarkInRoom': 'If the room is too dark, the auto-count might work incorrectly (the app will notify you). In this case, use the manual "+1" button.',
+
+      // Специальный ключ текста для панели "toDarkInRoom" на iOS PWA
+      'onboarding_text_toDarkInRoom_ios_pwa': 'Welcome! To count rakats, use the "+1" button at the bottom of the screen.\n\nWe will try to add an automatic rakat counting feature in the near future.',
+
       'onboarding_text_warning': 'Warning!\n\nIf you notice that the value in the "Mismatch" row exceeds 10 while you are in an upright position, it means the algorithm has encountered a glitch. In this case, you should tap the "Restart" button located right below the rakats counter.\n\nThis application is created to assist during prayer and does not guarantee entirely error-free tracking of prostrations. By tapping "Next", you agree that you bear full personal responsibility for the correctness of your prayer and any missed sujuds.',
       'onboarding_text_theEnd': 'You can restart this tutorial at any time or change other preferences in the application settings.\n\nHave a blessed prayer!',
       'next_button': 'Next',
@@ -88,9 +96,13 @@ class SajdahLocalization extends ChangeNotifier {
       'replay_tutorial': 'إعادة الدليل التعليمий',
       'debug_brightness': 'السطوع: ',
       'debug_mismatch': 'عدم التطابق: ',
-      'onboarding_text_phoneOnFloor': 'مرحباً بك! ضع الهاتف على الأرض أمام سجادة الصلاة (موضع السجود) والشاشة متجهة لأعلى، على مستوى الصدر تقريباً.\n\nلديك الوقت لاتخاذ الوضعية البدئية طالما أن النص الأصفر يضيء على الشاشة. إذا تمكنت من اتخاذها وتحول النص إلى اللون الأخضر، فيمكنك البدء في الصلاة.',
+      'onboarding_text_phoneOnFloor': 'مرحباً بك! ضع الهاتف على الأرض أمام سجادة الصلاة (موضع السجود) والشاشة متجهة لأعلم، على مستوى الصدر تقريباً.\n\nلديك الوقت لاتخاذ الوضعية البدئية طالما أن النص الأصفر يضيء на الشاشة. إذا تمكنت من اتخاذها وتحول النص إلى اللون الأخضر، فيمكنك البدء في الصلاة.',
       'onboarding_text_cameraDetection': 'ستقوم الكاميرا الأمامية بتلقائية باحتساب كل سجدة عند اقترابك من الشاشة.',
       'onboarding_text_toDarkInRoom': 'إذا كانت الإضاءة خافتة جداً، قد لا يعمل الحساب التلقائي بشكل صحيح (سيقوم التطبيق بتنبيهك). في هذه الحالة، استخدم زر "+1" اليدوي.',
+
+      // Специальный ключ текста для панели "toDarkInRoom" на iOS PWA
+      'onboarding_text_toDarkInRoom_ios_pwa': 'مرحباً بك! لحساب الركعات، استخدم زر «+1» في أسفل الشاشة.\n\nفي المستقبل القريب، سنحاول إضافة ميزة الحساب التلقائي للركعات.',
+
       'onboarding_text_warning': 'تنبيه!\n\nإذا لاحظت أن القيمة في خانة «عدم التطابق» تتجاوز 10 وأنت في وضع مستقيم، فهذا يعني حدوث خلل في الخوارزمية. في هذه الحالة، يرجى الضغط على زر «إعادة التشغيل» الموجود أسفل عداد الركعات.\n\nهذا التطبيق تم تطويره للمساعدة في الصلاة ولا يضمن دقة مطلقة في حساب السجدات. بالضغط على «التالي»، فإنك توافق على أنك تتحمل المسؤولية الكاملة عن صحة صلاتك وأي سجدات قد تُنسى.',
       'onboarding_text_theEnd': 'يمكنك دائماً إعادة تشغيل هذا التعليمي أو تغيير الإعدادات الأخرى من قائمة الإعدادات.\n\nنرجو لك صلاة مقبولة!',
       'next_button': 'التالي',
