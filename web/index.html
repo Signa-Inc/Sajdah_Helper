@@ -29,17 +29,47 @@
   <link rel="icon" type="image/png" href="icons/Icon-512.png"/>
 
   <title>Sajdah Helper</title>
-  <link rel="manifest" href="manifest.json">
+
+  <!-- ИЗМЕНЕНИЕ: Динамическое подключение манифеста только для iOS/iPadOS -->
+  <script>
+    (function() {
+      // Строгая проверка на iOS устройства
+      const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+                    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+
+      if (isIOS) {
+        // Добавляем манифест только если это iOS, чтобы работало добавление на экран Домой
+        const link = document.createElement('link');
+        link.rel = 'manifest';
+        link.href = 'manifest.json';
+        document.head.appendChild(link);
+      } else {
+        console.log("Non-iOS platform detected: manifest.json is disabled to prevent native install prompts.");
+      }
+    })();
+  </script>
 </head>
 <body>
-  <!--
-    You can customize the "flutter_bootstrap.js" script.
-    This is useful to provide a custom configuration to the Flutter loader
-    or to give the user feedback during the initialization process.
+<!-- Дополнительный перехватчик для старых версий браузеров -->
+<script>
+  window.addEventListener('beforeinstallprompt', (e) => {
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+                  (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    if (!isIOS) {
+      e.preventDefault();
+      return false;
+    }
+  });
+</script>
 
-    For more details:
-    * https://docs.flutter.dev/platform-integration/web/initialization
-  -->
-  <script src="flutter_bootstrap.js" async></script>
+<!--
+  You can customize the "flutter_bootstrap.js" script.
+  This is useful to provide a custom configuration to the Flutter loader
+  or to give the user feedback during the initialization process.
+
+  For more details:
+  * https://docs.flutter.dev/platform-integration/web/initialization
+-->
+<script src="flutter_bootstrap.js" async></script>
 </body>
 </html>

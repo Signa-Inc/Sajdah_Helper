@@ -124,14 +124,13 @@ class SajdahConfig {
   static const double minBrightnessThreshold = 100.0;
   static const int frameThrottleMs = 50;
   static const int stableFramesToUpdateBaseline = 8;
+
+  static bool isWeb() => kIsWeb;
   static bool isiOSWeb() => kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;
   static bool isAndroidWeb() => kIsWeb && defaultTargetPlatform == TargetPlatform.android;
-  static bool isWindows() => defaultTargetPlatform == TargetPlatform.windows;
-  static bool isMacOS() => defaultTargetPlatform == TargetPlatform.macOS;
-  static bool isLinux() => defaultTargetPlatform == TargetPlatform.linux;
-  static bool isWeb() => kIsWeb;
+  static bool isPC() => defaultTargetPlatform != TargetPlatform.iOS && defaultTargetPlatform != TargetPlatform.android;
 
-  static bool shouldShowStub() => isAndroidWeb() || isWindows() || isMacOS() || isLinux();
+  static bool shouldShowStub() => isAndroidWeb() || isPC();
 }
 
 late List<CameraDescription> _cameras;
