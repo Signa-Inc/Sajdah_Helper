@@ -10,7 +10,7 @@ import 'sajdah_storage.dart';
 import 'package:video_player/video_player.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter/foundation.dart';
-import 'package:image/image.dart' as img;
+import 'dart:js_interop';
 
 // ============================================================================
 // АРХИТЕКТУРА: ПАТТЕРН СТРАТЕГИЯ ДЛЯ АНАЛИЗА КАДРОВ
@@ -114,6 +114,9 @@ class AndroidFrameAnalyzer extends SajdahFrameAnalyzer {
 // КОНФИГУРАЦИЯ И НАСТРОЙКИ ПРИЛОЖЕНИЯ
 // ============================================================================
 
+@JS('isSamplePwaStandalone')
+external JSBoolean get isSamplePwaStandaloneJS;
+
 class SajdahConfig {
   static const int pixelStep = 15;
   static const int sensitivityThreshold = 35;
@@ -129,6 +132,15 @@ class SajdahConfig {
   static bool isiOSWeb() => kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;
   static bool isAndroidWeb() => kIsWeb && defaultTargetPlatform == TargetPlatform.android;
   static bool isPC() => defaultTargetPlatform != TargetPlatform.iOS && defaultTargetPlatform != TargetPlatform.android;
+
+  static bool isPwa() {
+    if (!kIsWeb) return false;
+    try {
+      return isSamplePwaStandaloneJS.toDart;
+    } catch (_) {
+      return false;
+    }
+  }
 
   static bool shouldShowStub() => isAndroidWeb() || isPC();
 }
@@ -219,7 +231,11 @@ class _SajdahAppState extends State<SajdahApp> {
         Widget homeScreen;
         if (SajdahConfig.shouldShowStub()) {
           homeScreen = const SajdahWebStubScreen();
-        } else if (_showOnboarding) {
+        }
+        else if (SajdahConfig.isiOSWeb() && !SajdahConfig.isPwa()) {
+          homeScreen = const SajdahIosWebPromptScreen();
+        }
+        else if (_showOnboarding) {
           homeScreen = SajdahOnboardingScreen(
             onCompleted: () {
               setState(() {
@@ -405,6 +421,129 @@ class SajdahWebStubScreen extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+// ============================================================================
+// ЭКРАН-ИНСТРУКЦИЯ ДЛЯ iOS: УСТАНОВКА PWA
+// ============================================================================
+class SajdahIosWebPromptScreen extends StatelessWidget {
+  const SajdahIosWebPromptScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: SafeArea(
+        child: Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 40),
+            child: Container(
+              constraints: const BoxConstraints(maxWidth: 450),
+              padding: const EdgeInsets.all(32),
+              decoration: BoxDecoration(
+                color: const Color(0xFF1E1E1E),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: Colors.white.withOpacity(0.05), width: 1),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Иконка "Поделиться" в Safari
+                  Container(
+                    padding: const EdgeInsets.all(20),
+                    decoration: BoxDecoration(
+                      color: Colors.blueAccent.withOpacity(0.1),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.ios_share_rounded,
+                      size: 40,
+                      color: Colors.blueAccent,
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  const Text(
+                    "Установите приложение",
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 1.0,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    "Чтобы использовать Sajdah Helper на iOS, необходимо добавить его на экран «Домой» как PWA-приложение. Это откроет доступ к камере и обеспечит стабильную работу.",
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Colors.white.withOpacity(0.7),
+                      fontSize: 15,
+                      height: 1.5,
+                    ),
+                  ),
+                  const SizedBox(height: 32),
+                  // Пошаговая микро-инструкция
+                  _buildStep(
+                    number: "1",
+                    text: "Нажмите кнопку «Поделиться» в нижней панели браузера Safari.",
+                  ),
+                  const SizedBox(height: 14),
+                  _buildStep(
+                    number: "2",
+                    text: "Прокрутите меню вниз и выберите «На экран „Домой“» (Add to Home Screen).",
+                  ),
+                  const SizedBox(height: 14),
+                  _buildStep(
+                    number: "3",
+                    text: "Нажмите «Добавить» в правом верхнем углу и запустите приложение с рабочего стола.",
+                  ),
+                  const SizedBox(height: 24),
+                  const Divider(color: Colors.white10),
+                  const SizedBox(height: 12),
+                  Text(
+                    'После этого приложение будет работать в полноэкранном режиме.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Colors.white.withOpacity(0.4),
+                      fontSize: 13,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStep({required String number, required String text}) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: 26,
+          height: 26,
+          alignment: Alignment.center,
+          decoration: const BoxDecoration(
+            color: Colors.white12,
+            shape: BoxShape.circle,
+          ),
+          child: Text(
+            number,
+            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Text(
+            text,
+            style: const TextStyle(fontSize: 14, height: 1.4),
+          ),
+        ),
+      ],
     );
   }
 }

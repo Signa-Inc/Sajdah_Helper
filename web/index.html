@@ -61,6 +61,24 @@
     }
   });
 </script>
+<script>
+  (function() {
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+                  (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+
+    // Сохраняем флаг PWA режима для Flutter
+    window.isSamplePwaStandalone = !!(navigator.standalone || window.matchMedia('(display-mode: standalone)').matches);
+
+    if (isIOS) {
+      const link = document.createElement('link');
+      link.rel = 'manifest';
+      link.href = 'manifest.json';
+      document.head.appendChild(link);
+    } else {
+      console.log("Non-iOS platform detected: manifest.json is disabled to prevent native install prompts.");
+    }
+  })();
+</script>
 
 <!--
   You can customize the "flutter_bootstrap.js" script.
