@@ -1148,6 +1148,58 @@ class _SajdahScreenState extends State<SajdahScreen> with WidgetsBindingObserver
     }
   }
 
+  void _showSettingInfo(String title, String description) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF1E1E1E),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: Colors.white24,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 20),
+                Text(
+                  title,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  description,
+                  style: TextStyle(
+                    color: Colors.white.withOpacity(0.7),
+                    fontSize: 15,
+                    height: 1.4,
+                  ),
+                ),
+                const SizedBox(height: 12),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
@@ -1319,6 +1371,7 @@ class _SajdahScreenState extends State<SajdahScreen> with WidgetsBindingObserver
 
             _buildSettingRow(
               title: localization.translate('setting_vibration'),
+              description: localization.translate('setting_vibration_desc'),
               value: SajdahStorage().getVibrationEnabled(),
               onChanged: (val) async {
                 await SajdahStorage().saveVibrationEnabled(val);
@@ -1329,6 +1382,7 @@ class _SajdahScreenState extends State<SajdahScreen> with WidgetsBindingObserver
 
             _buildSettingRow(
               title: localization.translate('setting_dnd'),
+              description: localization.translate('setting_dnd_desc'),
               value: SajdahStorage().getDndEnabled(),
               onChanged: (val) async {
                 await SajdahStorage().saveDndEnabled(val);
@@ -1375,6 +1429,7 @@ class _SajdahScreenState extends State<SajdahScreen> with WidgetsBindingObserver
             if (!SajdahConfig.isiOSWeb()) ...[
               _buildSettingRow(
                 title: localization.translate('setting_debug'),
+                description: localization.translate('setting_debug_desc'),
                 value: isDebugMode,
                 onChanged: (val) async {
                   await SajdahStorage().saveDebugMode(val);
@@ -1445,11 +1500,42 @@ class _SajdahScreenState extends State<SajdahScreen> with WidgetsBindingObserver
     );
   }
 
-  Widget _buildSettingRow({required String title, required bool value, required ValueChanged<bool> onChanged}) {
+  Widget _buildSettingRow({
+    required String title,
+    required bool value,
+    required ValueChanged<bool> onChanged,
+    String? description,
+  }) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Text(title, style: const TextStyle(color: Colors.white60, fontSize: 18, fontWeight: FontWeight.w300)),
+        Expanded(
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Flexible(
+                child: Text(
+                  title,
+                  style: const TextStyle(color: Colors.white60, fontSize: 18, fontWeight: FontWeight.w300),
+                ),
+              ),
+              if (description != null) ...[
+                const SizedBox(width: 6),
+                GestureDetector(
+                  onTap: () => _showSettingInfo(title, description),
+                  child: Padding(
+                    padding: const EdgeInsets.all(4.0),
+                    child: Icon(
+                      Icons.help_outline_rounded,
+                      color: Colors.white.withOpacity(0.4),
+                      size: 20,
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
         Switch.adaptive(
           value: value,
           activeColor: Colors.greenAccent.withOpacity(0.6),
