@@ -10,7 +10,7 @@ import 'sajdah_storage.dart';
 import 'package:video_player/video_player.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter/foundation.dart';
-import 'dart:js_interop';
+import 'pwa_helper.dart'; // Подставьте название вашего первого файла (Source 4)
 
 // ============================================================================
 // АРХИТЕКТУРА: ПАТТЕРН СТРАТЕГИЯ ДЛЯ АНАЛИЗА КАДРОВ
@@ -114,9 +114,6 @@ class AndroidFrameAnalyzer extends SajdahFrameAnalyzer {
 // КОНФИГУРАЦИЯ И НАСТРОЙКИ ПРИЛОЖЕНИЯ
 // ============================================================================
 
-@JS('isSamplePwaStandalone')
-external JSBoolean get isSamplePwaStandaloneJS;
-
 class SajdahConfig {
   static const int pixelStep = 15;
   static const int sensitivityThreshold = 35;
@@ -135,11 +132,7 @@ class SajdahConfig {
 
   static bool isPwa() {
     if (!kIsWeb) return false;
-    try {
-      return isSamplePwaStandaloneJS.toDart;
-    } catch (_) {
-      return false;
-    }
+    return isPwaStandalone();
   }
 
   static bool shouldShowStub() => isAndroidWeb() || isPC();
