@@ -9,7 +9,110 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'sajdah_storage.dart';
 import 'package:video_player/video_player.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'dart:io'; // Обязательно для проверки Platform.isIOS
+import 'package:flutter/foundation.dart';
+import 'pwa_helper.dart'; // Подставьте название вашего первого файла (Source 4)
+
+// ============================================================================
+// АРХИТЕКТУРА: ПАТТЕРН СТРАТЕГИЯ ДЛЯ АНАЛИЗА КАДРОВ
+// ============================================================================
+
+/// Результат анализа кадра, передаваемый обратно в экран
+class AnalysisResult {
+  final double computedPercentage;
+  final double avgBrightness;
+
+  AnalysisResult({required this.computedPercentage, required this.avgBrightness});
+}
+
+/// Абстрактный класс стратегии анализа кадров
+abstract class SajdahFrameAnalyzer {
+  Uint8List? baselineFrame;
+
+  /// Метод сброса базового кадра при перезапуске
+  void resetBaseline() {
+    baselineFrame = null;
+  }
+
+  /// Абстрактный метод для обработки кадра
+  AnalysisResult analyze({
+    required Uint8List currentBytes,
+    required int width,
+    required int height,
+    required int bytesPerRow,
+    required int sensorOrientation,
+    required bool isDebugMode,
+  });
+}
+
+/// СТРАТЕГИЯ ДЛЯ ANDROID: Оригинальный алгоритм без изменений
+class AndroidFrameAnalyzer extends SajdahFrameAnalyzer {
+  @override
+  AnalysisResult analyze({
+    required Uint8List currentBytes,
+    required int width,
+    required int height,
+    required int bytesPerRow,
+    required int sensorOrientation,
+    required bool isDebugMode,
+  }) {
+    double avgBrightness = 0;
+
+    double totalBrightness = 0;
+    int checkStep = 50;
+    int count = 0;
+    for (int i = 0; i < currentBytes.length; i += checkStep) {
+      totalBrightness += currentBytes[i];
+      count++;
+    }
+    avgBrightness = count > 0 ? totalBrightness / count : 0;
+
+    if (baselineFrame == null) {
+      baselineFrame = Uint8List.fromList(currentBytes);
+      return AnalysisResult(computedPercentage: 0.0, avgBrightness: avgBrightness);
+    }
+
+    int changedPixels = 0;
+    int totalChecked = 0;
+
+    int startX = 0;
+    int endX = width;
+    int startY = 0;
+    int endY = height;
+
+    if (sensorOrientation == 270) {
+      startX = width >> 1;
+      endX = width;
+    } else if (sensorOrientation == 90) {
+      startX = 0;
+      endX = width >> 1;
+    } else {
+      startY = 0;
+      endY = height >> 1;
+    }
+
+    for (int y = startY; y < endY; y += SajdahConfig.pixelStep) {
+      int rowOffset = y * bytesPerRow;
+      for (int x = startX; x < endX; x += SajdahConfig.pixelStep) {
+        int index = rowOffset + x;
+        if (index < currentBytes.length && index < baselineFrame!.length) {
+          totalChecked++;
+          final int diff = (currentBytes[index] - baselineFrame![index]).abs();
+          changedPixels += (diff > SajdahConfig.sensitivityThreshold) ? 1 : 0;
+        }
+      }
+    }
+
+    final double computedPercentage = totalChecked > 0 ? (changedPixels / totalChecked) : 0;
+    return AnalysisResult(computedPercentage: computedPercentage, avgBrightness: avgBrightness);
+  }
+}
+
+// ПРАВКА: Удален неиспользуемый класс IosPwaFrameAnalyzer, так как на iOS PWA
+// анализ кадров отключен и метод детекции переведен в режим заглушки.
+
+// ============================================================================
+// КОНФИГУРАЦИЯ И НАСТРОЙКИ ПРИЛОЖЕНИЯ
+// ============================================================================
 
 class SajdahConfig {
   static const int pixelStep = 15;
@@ -18,25 +121,44 @@ class SajdahConfig {
   static const double resetThreshold = 0.25;
   static const int framesToConfirm = 3;
   static const int cooldownVibrationSeconds = 2;
-  static const double minBrightessThreshold = 100.0;
+  static const double minBrightnessThreshold = 100.0;
   static const int frameThrottleMs = 50;
   static const int stableFramesToUpdateBaseline = 8;
+
+  static bool isWeb() => kIsWeb;
+  static bool isiOSWeb() => kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;
+  static bool isAndroidWeb() => kIsWeb && defaultTargetPlatform == TargetPlatform.android;
+  static bool isPC() => defaultTargetPlatform != TargetPlatform.iOS && defaultTargetPlatform != TargetPlatform.android;
+
+  static bool isPwa() {
+    if (!kIsWeb) return false;
+    return isPwaStandalone();
+  }
+
+  static bool shouldShowStub() => isAndroidWeb() || isPC();
 }
 
 late List<CameraDescription> _cameras;
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
 
-  await SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
+  if (!SajdahConfig.isWeb()) {
+    try {
+      SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+      await SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
+    } catch (e) {
+      debugPrint("Ошибка SystemChrome (нативная платформа): $e");
+    }
+  }
 
   await SajdahStorage().init();
 
   final String systemLang = WidgetsBinding.instance.platformDispatcher.locale.languageCode;
   SajdahLocalization().init(systemLang);
 
-  _cameras = await availableCameras();
+  // Инициализация списка камер убрана отсюда, чтобы не триггерить её на заглушках и до проверки девайса
+
   runApp(const SajdahApp());
 }
 
@@ -62,12 +184,20 @@ class _SajdahAppState extends State<SajdahApp> {
   @override
   void initState() {
     super.initState();
-    WakelockPlus.enable(); // Включаем один раз на уровне всего приложения
+    try {
+      WakelockPlus.enable();
+    } catch (e) {
+      debugPrint("Wakelock enable error: $e");
+    }
   }
 
   @override
   void dispose() {
-    WakelockPlus.disable(); // Выключаем только при закрытии приложения
+    try {
+      WakelockPlus.disable();
+    } catch (e) {
+      debugPrint("Wakelock disable error: $e");
+    }
     super.dispose();
   }
 
@@ -78,7 +208,6 @@ class _SajdahAppState extends State<SajdahApp> {
     });
   }
 
-  // Включает показ инструкции
   void openTutorialDynamically() {
     setState(() {
       _showOnboarding = true;
@@ -91,6 +220,25 @@ class _SajdahAppState extends State<SajdahApp> {
       animation: SajdahLocalization(),
       builder: (context, _) {
         final currentLang = SajdahLocalization().currentLocale;
+
+        Widget homeScreen;
+        if (SajdahConfig.shouldShowStub()) {
+          homeScreen = const SajdahWebStubScreen();
+        }
+        else if (SajdahConfig.isiOSWeb() && !SajdahConfig.isPwa()) {
+          homeScreen = const SajdahIosWebPromptScreen();
+        }
+        else if (_showOnboarding) {
+          homeScreen = SajdahOnboardingScreen(
+            onCompleted: () {
+              setState(() {
+                _showOnboarding = false;
+              });
+            },
+          );
+        } else {
+          homeScreen = const SajdahScreen();
+        }
 
         return KeyedSubtree(
           key: _key,
@@ -105,18 +253,290 @@ class _SajdahAppState extends State<SajdahApp> {
               GlobalMaterialLocalizations.delegate,
               GlobalWidgetsLocalizations.delegate,
             ],
-            home: _showOnboarding
-                ? SajdahOnboardingScreen(
-              onCompleted: () {
-                setState(() {
-                  _showOnboarding = false;
-                });
-              },
-            )
-                : const SajdahScreen(),
+            home: homeScreen,
           ),
         );
       },
+    );
+  }
+}
+
+// ============================================================================
+// ЭКРАН-ЗАГЛУШКА ДЛЯ ДЕСКТОПА И ANDROID WEB
+// ============================================================================
+class SajdahWebStubScreen extends StatelessWidget {
+  const SajdahWebStubScreen({super.key});
+
+  Future<void> _openUrl(String urlString) async {
+    final Uri url = Uri.parse(urlString);
+    try {
+      await launchUrl(url, mode: LaunchMode.platformDefault);
+    } catch (e) {
+      debugPrint("Не удалось открыть ссылку: $urlString");
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bool isAndroid = SajdahConfig.isAndroidWeb();
+
+    return Scaffold(
+      backgroundColor: const Color(0xFF121212),
+      body: Center(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 40),
+          child: Container(
+            constraints: const BoxConstraints(maxWidth: 500),
+            padding: const EdgeInsets.all(32),
+            decoration: BoxDecoration(
+              color: const Color(0xFF1E1E1E),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: Colors.white.withOpacity(0.05), width: 1),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.02),
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.white.withOpacity(0.05)),
+                  ),
+                  child: Icon(
+                    isAndroid ? Icons.phone_android_rounded : Icons.laptop_chromebook_rounded,
+                    size: 48,
+                    color: const Color(0xFFBB86FC),
+                  ),
+                ),
+                const SizedBox(height: 24),
+                const Text(
+                  "Sajdah Helper",
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 26,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 1.5,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  isAndroid
+                      ? "Полноценная работа приложения в мобильном браузере Android не поддерживается из-за ограничений веб-камеры. Пожалуйста, установите наше приложение для лучшего опыта."
+                      : "Этот проект разработан только для mobile устройств.",
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: Colors.white.withOpacity(0.6),
+                    fontSize: 15,
+                    height: 1.6,
+                  ),
+                ),
+                const SizedBox(height: 32),
+                if (isAndroid) ...[
+                  _buildButton(
+                    label: "Скачать из RuStore",
+                    icon: Icons.download_rounded,
+                    color: const Color(0xFFBB86FC),
+                    textColor: Colors.black,
+                    onTap: () => _openUrl("https://www.rustore.ru/catalog/app/com.darkframe.sajdah_helper"),
+                  ),
+                  const SizedBox(height: 12),
+                  _buildButton(
+                    label: "Скачать APK напрямую",
+                    icon: Icons.android_rounded,
+                    color: Colors.white.withOpacity(0.05),
+                    textColor: Colors.white,
+                    borderColor: Colors.white.withOpacity(0.2),
+                    onTap: () => _openUrl("https://github.com/Signa-Inc/"),
+                  ),
+                ] else ...[
+                  _buildButton(
+                    label: "Перейти на главную сайта",
+                    icon: Icons.language_rounded,
+                    color: const Color(0xFFBB86FC),
+                    textColor: Colors.black,
+                    onTap: () => _openUrl("https://github.com/Signa-Inc/"),
+                  ),
+                ],
+                const SizedBox(height: 32),
+                const Divider(color: Colors.white10),
+                const SizedBox(height: 8),
+                Text(
+                  'Dark Frame',
+                  style: TextStyle(
+                    color: Colors.white.withOpacity(0.25),
+                    fontSize: 13,
+                    fontWeight: FontWeight.w300,
+                    letterSpacing: 0.8,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildButton({
+    required String label,
+    required IconData icon,
+    required Color color,
+    required Color textColor,
+    Color? borderColor,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        width: double.infinity,
+        height: 52,
+        decoration: BoxDecoration(
+          color: color,
+          borderRadius: BorderRadius.circular(12),
+          border: borderColor != null ? Border.all(color: borderColor, width: 1) : null,
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, color: textColor, size: 20),
+            const SizedBox(width: 10),
+            Text(
+              label,
+              style: TextStyle(
+                color: textColor,
+                fontSize: 15,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ============================================================================
+// ЭКРАН-ИНСТРУКЦИЯ ДЛЯ iOS: УСТАНОВКА PWA
+// ============================================================================
+class SajdahIosWebPromptScreen extends StatelessWidget {
+  const SajdahIosWebPromptScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: SafeArea(
+        child: Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 40),
+            child: Container(
+              constraints: const BoxConstraints(maxWidth: 450),
+              padding: const EdgeInsets.all(32),
+              decoration: BoxDecoration(
+                color: const Color(0xFF1E1E1E),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: Colors.white.withOpacity(0.05), width: 1),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Иконка "Поделиться" в Safari
+                  Container(
+                    padding: const EdgeInsets.all(20),
+                    decoration: BoxDecoration(
+                      color: Colors.blueAccent.withOpacity(0.1),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.ios_share_rounded,
+                      size: 40,
+                      color: Colors.blueAccent,
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  const Text(
+                    "Установите приложение",
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 1.0,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    "Чтобы использовать Sajdah Helper на iOS, необходимо добавить его на экран «Домой» как PWA-приложение. Это откроет доступ к камере и обеспечит стабильную работу.",
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Colors.white.withOpacity(0.7),
+                      fontSize: 15,
+                      height: 1.5,
+                    ),
+                  ),
+                  const SizedBox(height: 32),
+                  // Пошаговая микро-инструкция
+                  _buildStep(
+                    number: "1",
+                    text: "Нажмите кнопку «Поделиться» в нижней панели браузера Safari.",
+                  ),
+                  const SizedBox(height: 14),
+                  _buildStep(
+                    number: "2",
+                    text: "Прокрутите меню вниз и выберите «На экран „Домой“» (Add to Home Screen).",
+                  ),
+                  const SizedBox(height: 14),
+                  _buildStep(
+                    number: "3",
+                    text: "Нажмите «Добавить» в правом верхнем углу и запустите приложение с рабочего стола.",
+                  ),
+                  const SizedBox(height: 24),
+                  const Divider(color: Colors.white10),
+                  const SizedBox(height: 12),
+                  Text(
+                    'После этого приложение будет работать в полноэкранном режиме.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Colors.white.withOpacity(0.4),
+                      fontSize: 13,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStep({required String number, required String text}) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: 26,
+          height: 26,
+          alignment: Alignment.center,
+          decoration: const BoxDecoration(
+            color: Colors.white12,
+            shape: BoxShape.circle,
+          ),
+          child: Text(
+            number,
+            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Text(
+            text,
+            style: const TextStyle(fontSize: 14, height: 1.4),
+          ),
+        ),
+      ],
     );
   }
 }
@@ -140,37 +560,49 @@ class _SajdahOnboardingScreenState extends State<SajdahOnboardingScreen> {
   int _secondsRemaining = 0;
   bool _isButtonEnabled = false;
 
-  final List<Map<String, dynamic>> _steps = [
-    {
-      'textKey': 'onboarding_text_phoneOnFloor',
-      'video': 'assets/videos/video_phoneOnFloor.mp4',
-      'duration': 5,
-    },
-    {
-      'textKey': 'onboarding_text_cameraDetection',
-      'video': 'assets/videos/video_cameraDetection.mp4',
-      'duration': 6,
-    },
-    {
-      'textKey': 'onboarding_text_toDarkInRoom',
-      'video': 'assets/videos/video_toDarkInRoom.mp4',
-      'duration': 6,
-    },
-    {
-      'textKey': 'onboarding_text_warning',
-      'video': 'assets/videos/video_warning.mp4',
-      'duration': 10,
-    },
-    {
-      'textKey': 'onboarding_text_theEnd',
-      'video': 'assets/videos/video_theEnd.mp4',
-      'duration': 5,
-    },
-  ];
+  late final List<Map<String, dynamic>> _steps;
 
   @override
   void initState() {
     super.initState();
+
+    _steps = [
+      if (SajdahConfig.isiOSWeb())
+        {
+          'textKey': 'onboarding_text_toDarkInRoom_ios_pwa',
+          'video': 'assets/videos/video_toDarkInRoom.mp4',
+          'duration': 6,
+        }
+      else ...[
+        {
+          'textKey': 'onboarding_text_phoneOnFloor',
+          'video': 'assets/videos/video_phoneOnFloor.mp4',
+          'duration': 5,
+        },
+        {
+          'textKey': 'onboarding_text_cameraDetection',
+          'video': 'assets/videos/video_cameraDetection.mp4',
+          'duration': 6,
+        },
+        {
+          'textKey': 'onboarding_text_toDarkInRoom',
+          'video': 'assets/videos/video_toDarkInRoom.mp4',
+          'duration': 6,
+        },
+      ],
+      // Эти шаги добавятся в любом случае в конец списка
+      {
+        'textKey': 'onboarding_text_warning',
+        'video': 'assets/videos/video_warning.mp4',
+        'duration': 10,
+      },
+      {
+        'textKey': 'onboarding_text_theEnd',
+        'video': 'assets/videos/video_theEnd.mp4',
+        'duration': 5,
+      },
+    ];
+
     _initStep();
   }
 
@@ -190,7 +622,6 @@ class _SajdahOnboardingScreenState extends State<SajdahOnboardingScreen> {
 
     final currentStep = _steps[_currentStepIndex];
 
-    // Безопасное приведение double/int параметров из прошлого коммита сохранёно
     _secondsRemaining = (currentStep['duration'] as num).round();
     _isButtonEnabled = _secondsRemaining <= 0;
 
@@ -247,7 +678,6 @@ class _SajdahOnboardingScreenState extends State<SajdahOnboardingScreen> {
       if (_videoController != null) {
         await _videoController!.dispose();
       }
-      // Безопасное сохранение состояния - не перезапишет True, если мы запустили из настроек
       if (SajdahStorage().isFirstLaunch()) {
         await SajdahStorage().setFirstLaunchCompleted();
       }
@@ -361,13 +791,16 @@ class SajdahScreen extends StatefulWidget {
 }
 
 class _SajdahScreenState extends State<SajdahScreen> with WidgetsBindingObserver {
-  bool _isDndNativeActive = false; // Контролирует, запущен ли DND в данный момент на уровне системы
+  bool _isDndNativeActive = false;
 
   CameraController? controller;
   double rakatCount = 0;
 
-  int _framesToSkip = 10; // Сколько кадров нужно проигнорировать для стабилизации сенсора
-  Uint8List? baselineFrame;
+  late final SajdahFrameAnalyzer _frameAnalyzer;
+
+  Uint8List? get baselineFrame => _frameAnalyzer.baselineFrame;
+  set baselineFrame(Uint8List? value) => _frameAnalyzer.baselineFrame = value;
+
   bool isSajdaDetected = false;
   DateTime? lastSajdaTime;
   int confirmCount = 0;
@@ -395,36 +828,51 @@ class _SajdahScreenState extends State<SajdahScreen> with WidgetsBindingObserver
   double _lastRakatCountAtBaselineUpdate = 0;
   bool _baselineUpdatePending = false;
 
-  // Канал связи с нативной частью Android для управления DND
+  // ПРАВКА: Удалены неиспользуемые переменные таймера веба (_frameTimer и _isProcessingWebFrame),
+  // провоцировавшие нагрев и лаги на iOS PWA.
+
   static const platform = MethodChannel('com.darkframe.sajdah_helper/dnd');
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    WakelockPlus.enable();
+    try {
+      WakelockPlus.enable();
+    } catch (e) {
+      debugPrint("Wakelock enable error: $e");
+    }
+
+    // ПРАВКА: В силу того, что iOS PWA переведен на заглушку, используем стандартный
+    // AndroidFrameAnalyzer для нативного бэкенда, убирая мертвый код.
+    _frameAnalyzer = AndroidFrameAnalyzer();
 
     isDebugMode = SajdahStorage().getDebugMode();
+
+    // Инициализация камеры теперь сама подтянет список камер после всех проверок
     initCamera();
 
-    // Сначала запоминаем чистый статус телефона, затем глушим звуки
-    _executeDndCommand('saveInitialState').then((_) {
-      _isDndNativeActive = SajdahStorage().getDndEnabled();
-      _executeDndCommand(_isDndNativeActive ? 'activateDnd' : 'inactivateDnd');
-
-    });
+    if (!SajdahConfig.isWeb()) {
+      _executeDndCommand('saveInitialState').then((_) {
+        _isDndNativeActive = SajdahStorage().getDndEnabled();
+        _executeDndCommand(_isDndNativeActive ? 'activateDnd' : 'inactivateDnd');
+      });
+    } else {
+      isInitializing = false;
+    }
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     final dndEnabled = SajdahStorage().getDndEnabled();
 
-    // БЛОК DND И ЭКРАНА (WAKELOCK)
     if (state == AppLifecycleState.resumed) {
-      // Принудительно возвращаем Wakelock при возврате в приложение
-      WakelockPlus.enable();
+      try {
+        WakelockPlus.enable();
+      } catch (e) {
+        debugPrint("Wakelock enable error: $e");
+      }
 
-      // Включаем DND только если он разрешен в настройках и еще НЕ активен
       if (dndEnabled && !_isDndNativeActive) {
         _executeDndCommand('activateDnd');
         _isDndNativeActive = true;
@@ -434,10 +882,9 @@ class _SajdahScreenState extends State<SajdahScreen> with WidgetsBindingObserver
         state == AppLifecycleState.paused ||
         state == AppLifecycleState.detached) {
 
-      // Снимаем DND строго один раз при любом выходе/сворачивании/уничтожении
       if (dndEnabled && _isDndNativeActive) {
         _executeDndCommand('restoreDnd');
-        _isDndNativeActive = false; // Сбрасываем флаг, повторные эвенты сюда не пройдут
+        _isDndNativeActive = false;
       }
     }
 
@@ -447,24 +894,39 @@ class _SajdahScreenState extends State<SajdahScreen> with WidgetsBindingObserver
       controller?.stopImageStream();
     } else if (state == AppLifecycleState.resumed) {
       if (isFrontCameraFinded && !controller!.value.isStreamingImages) {
-        _framesToSkip = 10;
         controller?.startImageStream(analyzeFrame);
       }
     }
   }
 
-  // Метод вызова нативного кода для включения/выключения режима "Не беспокоить"
   Future<void> _executeDndCommand(String command) async {
-    if (Platform.isIOS) return;
+    if (SajdahConfig.isWeb()) return;
 
     try {
       await platform.invokeMethod(command);
     } on PlatformException catch (e) {
       debugPrint("Ошибка DND при команде $command: ${e.message}");
+    } catch (e) {
+      debugPrint("Ошибка DND (MethodChannel) при команде $command: $e");
     }
   }
 
   Future<void> initCamera() async {
+    // Если это iOS PWA, то камера нам вообще не нужна, так как анализ отключен
+    if (SajdahConfig.isiOSWeb()) {
+      setState(() {
+        isInitializing = false;
+      });
+      return;
+    }
+
+    try {
+      _cameras = await availableCameras();
+    } catch (e) {
+      debugPrint("Ошибка получения списка камер: $e");
+      _cameras = <CameraDescription>[];
+    }
+
     if (_cameras.isEmpty) {
       debugPrint("Камеры не найдены на устройстве");
       setState(() {
@@ -493,19 +955,24 @@ class _SajdahScreenState extends State<SajdahScreen> with WidgetsBindingObserver
     try {
       await controller!.initialize();
 
-      // Запускаем стрим только если панель настроек закрыта
       if (!isSettingsOpen && controller!.value.isInitialized) {
-        _warmupFrames = 30; // Пропустим первые 30 кадров (~1 сек), чтобы сенсор адаптировался к свету
-        await controller!.startImageStream(analyzeFrame);
+        // ПРАВКА: Изъят тяжелый таймер цикличного вызова takePicture для Web.
+        // Нативные платформы по-прежнему запускают оптимизированный image stream.
+        if (!SajdahConfig.isWeb()) {
+          try {
+            _warmupFrames = 30;
+            await controller!.startImageStream(analyzeFrame);
 
-        // Даем камере «продышаться» на запущенном стриме перед фиксацией
-        await Future.delayed(const Duration(milliseconds: 500));
+            await Future.delayed(const Duration(milliseconds: 500));
 
-        // Теперь жестко блокируем экспозицию и фокус НА УЖЕ ЖИВОМ СТРИМЕ
-        if (controller!.value.isInitialized && !isSettingsOpen) {
-          await controller!.setFocusMode(FocusMode.locked);
-          await controller!.setExposureMode(ExposureMode.locked);
-          await controller!.lockCaptureOrientation(DeviceOrientation.portraitUp);
+            if (controller!.value.isInitialized && !isSettingsOpen) {
+              await controller!.setFocusMode(FocusMode.locked);
+              await controller!.setExposureMode(ExposureMode.locked);
+              await controller!.lockCaptureOrientation(DeviceOrientation.portraitUp);
+            }
+          } catch (e) {
+            debugPrint("Ошибка настройки нативного стрима камеры: $e");
+          }
         }
       }
     } catch (e) {
@@ -524,22 +991,32 @@ class _SajdahScreenState extends State<SajdahScreen> with WidgetsBindingObserver
     setState(() {
       isSettingsOpen = !isSettingsOpen;
     });
+
     if (isSettingsOpen) {
-      if (controller != null && controller!.value.isStreamingImages) {
-        await controller?.stopImageStream();
+      // ПРАВКА: Убран блок остановки таймера веба за ненадобностью.
+      if (!SajdahConfig.isWeb()) {
+        if (controller != null && controller!.value.isStreamingImages) {
+          await controller?.stopImageStream();
+        }
       }
     } else {
       if (isFrontCameraFinded && controller != null && controller!.value.isInitialized) {
-        if (!controller!.value.isStreamingImages) {
-          baselineFrame = null;
-          _warmupFrames = 20; // Скипаем первые кадры после переключения
-          await controller!.startImageStream(analyzeFrame);
+        // ПРАВКА: Исключен блок инициализации таймера веба, стрим запускается только на нативе.
+        if (!SajdahConfig.isWeb()) {
+          if (!controller!.value.isStreamingImages) {
+            _frameAnalyzer.resetBaseline();
+            _warmupFrames = 20;
+            try {
+              await controller!.startImageStream(analyzeFrame);
 
-          // Повторно лочим параметры после перезапуска стрима
-          await Future.delayed(const Duration(milliseconds: 500));
-          if (controller!.value.isInitialized && !isSettingsOpen) {
-            await controller!.setFocusMode(FocusMode.locked);
-            await controller!.setExposureMode(ExposureMode.locked);
+              await Future.delayed(const Duration(milliseconds: 500));
+              if (controller!.value.isInitialized && !isSettingsOpen) {
+                await controller!.setFocusMode(FocusMode.locked);
+                await controller!.setExposureMode(ExposureMode.locked);
+              }
+            } catch (e) {
+              debugPrint("Ошибка перезапуска нативного стрима камеры: $e");
+            }
           }
         }
       }
@@ -565,17 +1042,15 @@ class _SajdahScreenState extends State<SajdahScreen> with WidgetsBindingObserver
     final int height = image.height;
     final int bytesPerRow = image.planes[0].bytesPerRow;
 
-    double avgBrightness = 0;
-    if (!hasCheckedInitialBrightness || isDebugMode) {
-      double totalBrightness = 0;
-      int checkStep = 50;
-      int count = 0;
-      for (int i = 0; i < bytes.length; i += checkStep) {
-        totalBrightness += bytes[i];
-        count++;
-      }
-      avgBrightness = count > 0 ? totalBrightness / count : 0;
-    }
+    final sensorOrientation = controller?.description.sensorOrientation ?? 270;
+    final result = _frameAnalyzer.analyze(
+      currentBytes: bytes,
+      width: width,
+      height: height,
+      bytesPerRow: bytesPerRow,
+      sensorOrientation: sensorOrientation,
+      isDebugMode: isDebugMode,
+    );
 
     if (!hasCheckedInitialBrightness) {
       hasCheckedInitialBrightness = true;
@@ -583,7 +1058,7 @@ class _SajdahScreenState extends State<SajdahScreen> with WidgetsBindingObserver
       showStatusMessage = true;
 
       setState(() {
-        if (avgBrightness <= SajdahConfig.minBrightessThreshold) {
+        if (result.avgBrightness <= SajdahConfig.minBrightnessThreshold) {
           statusMessageText = SajdahLocalization().translate('too_dark');
           statusMessageColor = Colors.redAccent;
         } else {
@@ -599,57 +1074,16 @@ class _SajdahScreenState extends State<SajdahScreen> with WidgetsBindingObserver
       });
     }
 
-    if (baselineFrame == null) {
-      baselineFrame = Uint8List.fromList(bytes);
-      _brightnessNotifier.value = avgBrightness;
-      return;
-    }
+    _changePercentageNotifier.value = result.computedPercentage;
+    _brightnessNotifier.value = result.avgBrightness;
 
-    int changedPixels = 0;
-    int totalChecked = 0;
-    final int sensorOrientation = controller?.description.sensorOrientation ?? 270;
-
-    int startX = 0;
-    int endX = width;
-    int startY = 0;
-    int endY = height;
-
-    if (sensorOrientation == 270) {
-      startX = width >> 1;
-      endX = width;
-    } else if (sensorOrientation == 90) {
-      startX = 0;
-      endX = width >> 1;
-    } else {
-      startY = 0;
-      endY = height >> 1;
-    }
-
-    for (int y = startY; y < endY; y += SajdahConfig.pixelStep) {
-      int rowOffset = y * bytesPerRow;
-      for (int x = startX; x < endX; x += SajdahConfig.pixelStep) {
-        int index = rowOffset + x;
-        if (index < bytes.length && index < baselineFrame!.length) {
-          totalChecked++;
-          final int diff = (bytes[index] - baselineFrame![index]).abs();
-          changedPixels += (diff > SajdahConfig.sensitivityThreshold) ? 1 : 0;
-        }
-      }
-    }
-
-    final double computedPercentage = totalChecked > 0 ? (changedPixels / totalChecked) : 0;
-
-    // Мгновенно обновляем значения без вызова тяжелого setState
-    _changePercentageNotifier.value = computedPercentage;
-    _brightnessNotifier.value = avgBrightness;
-
-    if (computedPercentage > SajdahConfig.detectionThreshold) {
+    if (result.computedPercentage > SajdahConfig.detectionThreshold) {
       confirmCount++;
       if (confirmCount >= SajdahConfig.framesToConfirm && !isSajdaDetected) {
         processSajda();
         isSajdaDetected = true;
       }
-    } else if (computedPercentage < SajdahConfig.resetThreshold) {
+    } else if (result.computedPercentage < SajdahConfig.resetThreshold) {
       confirmCount = 0;
       isSajdaDetected = false;
 
@@ -671,6 +1105,10 @@ class _SajdahScreenState extends State<SajdahScreen> with WidgetsBindingObserver
     }
   }
 
+  void analyzeWebFrame(Uint8List jpegBytes) {
+    return;
+  }
+
   void processSajda() async {
     final now = DateTime.now();
     if (lastSajdaTime != null &&
@@ -680,11 +1118,15 @@ class _SajdahScreenState extends State<SajdahScreen> with WidgetsBindingObserver
 
     lastSajdaTime = now;
 
-    if (SajdahStorage().getVibrationEnabled()) {
+    if (SajdahStorage().getVibrationEnabled() && !SajdahConfig.isWeb()) {
       if (_isDndNativeActive) {
         await _executeDndCommand('vibrateWithDndBypassInsideNative');
       } else {
-        Vibration.vibrate(duration: 100);
+        try {
+          Vibration.vibrate(duration: 100);
+        } catch (e) {
+          debugPrint("Ошибка вибрации: $e");
+        }
       }
     }
 
@@ -706,14 +1148,67 @@ class _SajdahScreenState extends State<SajdahScreen> with WidgetsBindingObserver
     }
   }
 
+  void _showSettingInfo(String title, String description) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF1E1E1E),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: Colors.white24,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 20),
+                Text(
+                  title,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  description,
+                  style: TextStyle(
+                    color: Colors.white.withOpacity(0.7),
+                    fontSize: 15,
+                    height: 1.4,
+                  ),
+                ),
+                const SizedBox(height: 12),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     controller?.dispose();
-    _executeDndCommand('restoreDnd');    // Возвращаем звук
-    _executeDndCommand('resetSession');  // Закрываем сессию в Java
+    _executeDndCommand('restoreDnd');
+    _executeDndCommand('resetSession');
     _brightnessNotifier.dispose();
     _changePercentageNotifier.dispose();
+    // ПРАВКА: Убрана очистка несуществующего веб-таймера.
     super.dispose();
   }
 
@@ -772,7 +1267,7 @@ class _SajdahScreenState extends State<SajdahScreen> with WidgetsBindingObserver
                 if (!isFrontCameraFinded)
                   _buildWarningCard(localization.translate('no_front_camera')),
 
-                if (isDebugMode)
+                if (isDebugMode && !SajdahConfig.isiOSWeb())
                   ValueListenableBuilder<double>(
                     valueListenable: _brightnessNotifier,
                     builder: (context, brightness, _) {
@@ -876,6 +1371,7 @@ class _SajdahScreenState extends State<SajdahScreen> with WidgetsBindingObserver
 
             _buildSettingRow(
               title: localization.translate('setting_vibration'),
+              description: localization.translate('setting_vibration_desc'),
               value: SajdahStorage().getVibrationEnabled(),
               onChanged: (val) async {
                 await SajdahStorage().saveVibrationEnabled(val);
@@ -884,40 +1380,32 @@ class _SajdahScreenState extends State<SajdahScreen> with WidgetsBindingObserver
             ),
             const Divider(color: Colors.white10, height: 25),
 
-            // Строка управления режимом "Не беспокоить"
-            if (!Platform.isIOS) ... [ // Строка отобразится ТОЛЬКО на Android
-              _buildSettingRow(
-                title: localization.translate('setting_dnd'),
-                value: SajdahStorage().getDndEnabled(),
-                onChanged: (val) async {
-                  await SajdahStorage().saveDndEnabled(val);
-                  setState(() {});
+            _buildSettingRow(
+              title: localization.translate('setting_dnd'),
+              description: localization.translate('setting_dnd_desc'),
+              value: SajdahStorage().getDndEnabled(),
+              onChanged: (val) async {
+                await SajdahStorage().saveDndEnabled(val);
+                setState(() {});
 
-                  // Моментально реагируем на изменение тумблера прямо в открытых настройках
-                  if (val) {
-                    // Если тумблер включили прямо во время сессии:
-                    // сначала гарантированно сохраняем текущее состояние телефона, а затем включаем тишину
-                    await _executeDndCommand('saveInitialState');
-                    await _executeDndCommand('activateDnd');
-                    _isDndNativeActive = true;
-                  } else {
-                    // Если тумблер выключили - моментально возвращаем исходный режим телефона
-                    await _executeDndCommand('restoreDnd');
-                    _isDndNativeActive = false;
-                  }
-                },
-              ),
-              const Divider(color: Colors.white10, height: 25),
-            ],
+                if (val) {
+                  await _executeDndCommand('saveInitialState');
+                  await _executeDndCommand('activateDnd');
+                  _isDndNativeActive = true;
+                } else {
+                  await _executeDndCommand('restoreDnd');
+                  _isDndNativeActive = false;
+                }
+              },
+            ),
+            const Divider(color: Colors.white10, height: 25),
 
-            // Измененный обработчик перезапуска обучения без сброса флагов хранилища
             GestureDetector(
               onTap: () {
                 if (mounted) {
                   setState(() {
                     isSettingsOpen = false;
                   });
-                  // Вызываем мягкий динамический запуск поверх текущей сессии
                   SajdahApp.showTutorial(context);
                 }
               },
@@ -938,19 +1426,21 @@ class _SajdahScreenState extends State<SajdahScreen> with WidgetsBindingObserver
             ),
             const Divider(color: Colors.white10, height: 25),
 
-            _buildSettingRow(
-              title: localization.translate('setting_debug'),
-              value: isDebugMode,
-              onChanged: (val) async {
-                await SajdahStorage().saveDebugMode(val);
-                setState(() {
-                  isDebugMode = val;
-                  if (!isDebugMode) showCameraPreview = false;
-                });
-              },
-            ),
-
-            const Divider(color: Colors.white10, height: 25),
+            if (!SajdahConfig.isiOSWeb()) ...[
+              _buildSettingRow(
+                title: localization.translate('setting_debug'),
+                description: localization.translate('setting_debug_desc'),
+                value: isDebugMode,
+                onChanged: (val) async {
+                  await SajdahStorage().saveDebugMode(val);
+                  setState(() {
+                    isDebugMode = val;
+                    if (!isDebugMode) showCameraPreview = false;
+                  });
+                },
+              ),
+              const Divider(color: Colors.white10, height: 25),
+            ],
 
             Row(
               children: [
@@ -962,15 +1452,17 @@ class _SajdahScreenState extends State<SajdahScreen> with WidgetsBindingObserver
               ],
             ),
 
-            // Прижимаем плашку с версией и ником к низу оверлея через Spacer
             const Spacer(),
             Center(
               child: GestureDetector(
                 onTap: () async {
                   final Uri url = Uri.parse('https://github.com/Signa-Inc/');
-                  if (await canLaunchUrl(url)) {
-                    await launchUrl(url, mode: LaunchMode.externalApplication);
-                  } else {
+                  try {
+                    await launchUrl(
+                        url,
+                        mode: SajdahConfig.isWeb() ? LaunchMode.platformDefault : LaunchMode.externalApplication
+                    );
+                  } catch (e) {
                     debugPrint("Не удалось открыть ссылку: $url");
                   }
                 },
@@ -1008,11 +1500,42 @@ class _SajdahScreenState extends State<SajdahScreen> with WidgetsBindingObserver
     );
   }
 
-  Widget _buildSettingRow({required String title, required bool value, required ValueChanged<bool> onChanged}) {
+  Widget _buildSettingRow({
+    required String title,
+    required bool value,
+    required ValueChanged<bool> onChanged,
+    String? description,
+  }) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Text(title, style: const TextStyle(color: Colors.white60, fontSize: 18, fontWeight: FontWeight.w300)),
+        Expanded(
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Flexible(
+                child: Text(
+                  title,
+                  style: const TextStyle(color: Colors.white60, fontSize: 18, fontWeight: FontWeight.w300),
+                ),
+              ),
+              if (description != null) ...[
+                const SizedBox(width: 6),
+                GestureDetector(
+                  onTap: () => _showSettingInfo(title, description),
+                  child: Padding(
+                    padding: const EdgeInsets.all(4.0),
+                    child: Icon(
+                      Icons.help_outline_rounded,
+                      color: Colors.white.withOpacity(0.4),
+                      size: 20,
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
         Switch.adaptive(
           value: value,
           activeColor: Colors.greenAccent.withOpacity(0.6),

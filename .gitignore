@@ -48,6 +48,7 @@ app.*.map.json
 /Build APK Split.bat
 /Build APK Split (OLD).bat
 /Build APK Whole.bat
+/Build WEB.bat
 /pepk.jar
 /pepk_out.zip
 /android/app/proguard-rules.pro

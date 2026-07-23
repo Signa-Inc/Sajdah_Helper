@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <!--
+    If you are serving your web app in a path other than the root, change the
+    href value below to reflect the base path you are serving from.
+
+    The path provided below has to start and end with a slash "/" in order for
+    it to work correctly.
+
+    For more details:
+    * https://developer.mozilla.org/en-US/docs/Web/HTML/Element/base
+
+    This is a placeholder for base href that will be replaced by the value of
+    the `--base-href` argument provided to `flutter build`.
+  -->
+  <base href="$FLUTTER_BASE_HREF">
+
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' 'unsafe-eval' data: gap: https://* http://* blob:; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://* http://*; style-src 'self' 'unsafe-inline' https://*; object-src 'none';">
+
+  <meta charset="UTF-8">
+  <meta content="IE=Edge" http-equiv="X-UA-Compatible">
+  <meta name="description" content="Sajdah Helper Web Application">
+
+  <!-- iOS meta tags & icons -->
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+  <meta name="apple-mobile-web-app-title" content="Sajdah Helper">
+  <link rel="apple-touch-icon" href="icons/Icon-192.png">
+
+  <link rel="icon" type="image/png" href="icons/Icon-512.png"/>
+
+  <title>Sajdah Helper</title>
+
+  <!-- ИЗМЕНЕНИЕ: Динамическое подключение манифеста только для iOS/iPadOS -->
+  <script>
+    (function() {
+      // Строгая проверка на iOS устройства
+      const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+                    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+
+      if (isIOS) {
+        // Добавляем манифест только если это iOS, чтобы работало добавление на экран Домой
+        const link = document.createElement('link');
+        link.rel = 'manifest';
+        link.href = 'manifest.json';
+        document.head.appendChild(link);
+      } else {
+        console.log("Non-iOS platform detected: manifest.json is disabled to prevent native install prompts.");
+      }
+    })();
+  </script>
+</head>
+<body>
+<!-- Дополнительный перехватчик для старых версий браузеров -->
+<script>
+  window.addEventListener('beforeinstallprompt', (e) => {
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+                  (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    if (!isIOS) {
+      e.preventDefault();
+      return false;
+    }
+  });
+</script>
+<script>
+  (function() {
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+                  (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+
+    // Сохраняем флаг PWA режима для Flutter
+    window.isSamplePwaStandalone = !!(navigator.standalone || window.matchMedia('(display-mode: standalone)').matches);
+
+    if (isIOS) {
+      const link = document.createElement('link');
+      link.rel = 'manifest';
+      link.href = 'manifest.json';
+      document.head.appendChild(link);
+    } else {
+      console.log("Non-iOS platform detected: manifest.json is disabled to prevent native install prompts.");
+    }
+  })();
+</script>
+
+<!--
+  You can customize the "flutter_bootstrap.js" script.
+  This is useful to provide a custom configuration to the Flutter loader
+  or to give the user feedback during the initialization process.
+
+  For more details:
+  * https://docs.flutter.dev/platform-integration/web/initialization
+-->
+<script src="flutter_bootstrap.js" async></script>
+</body>
+</html>
