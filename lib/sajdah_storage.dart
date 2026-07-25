@@ -30,4 +30,8 @@ class SajdahStorage {
   // --- ПЕРВЫЙ ЗАПУСК / ИНСТРУКЦИЯ ---
   bool isFirstLaunch() => _prefs.getBool('is_first_launch') ?? true;
   Future<void> setFirstLaunchCompleted() async => await _prefs.setBool('is_first_launch', false);
+
+  // --- ИСПОЛЬЗОВАНИЕ КАМЕРЫ (По умолчанию: true) ---
+  bool getCameraEnabled() => _prefs.getBool('camera_enabled') ?? true;
+  Future<void> saveCameraEnabled(bool value) async => await _prefs.setBool('camera_enabled', value);
 }
