@@ -11,6 +11,7 @@ import 'package:video_player/video_player.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter/foundation.dart';
 import 'pwa_helper.dart';
+import 'package:universal_html/html.dart' as html;
 
 class AnalysisResult {
   final double computedPercentage;
@@ -248,6 +249,64 @@ class _SajdahAppState extends State<SajdahApp> {
 }
 
 // ============================================================================
+// МОДЕЛЬ И СЧИТЫВАТЕЛЬ СТИЛЕЙ ИЗ index.html
+// ============================================================================
+class IndexTheme {
+  final Color bgColor;
+  final Color surfaceCard;
+  final Color borderColor;
+  final Color primaryColor;
+  final Color accentColor;
+  final Color textMain;
+  final Color textSecondary;
+
+  const IndexTheme({
+    this.bgColor = const Color(0xFF0B0F19),
+    this.surfaceCard = const Color(0xFF131C2E),
+    this.borderColor = const Color(0x14FFFFFF),
+    this.primaryColor = const Color(0xFF38BDF8),
+    this.accentColor = const Color(0xFF6366F1),
+    this.textMain = const Color(0xFFF8FAFC),
+    this.textSecondary = const Color(0xFF94A3B8),
+  });
+
+  factory IndexTheme.fromCssOrDefaults() {
+    if (!kIsWeb) return const IndexTheme();
+
+    try {
+      final rootElement = html.document.documentElement;
+
+      final style = rootElement?.getComputedStyle();
+
+      Color parseColor(String varName, Color fallback) {
+        if (style == null) return fallback;
+        final rawVal = style.getPropertyValue(varName).trim();
+
+        if (rawVal.startsWith('#')) {
+          final hex = rawVal.replaceFirst('#', '');
+          if (hex.length == 6) {
+            return Color(int.parse('FF$hex', radix: 16));
+          }
+        }
+        return fallback;
+      }
+
+      return IndexTheme(
+        bgColor: parseColor('--bg-color', const Color(0xFF0B0F19)),
+        surfaceCard: parseColor('--surface-card', const Color(0xFF131C2E)),
+        borderColor: parseColor('--border-color', const Color(0x14FFFFFF)),
+        primaryColor: parseColor('--primary-color', const Color(0xFF38BDF8)),
+        accentColor: parseColor('--accent-color', const Color(0xFF6366F1)),
+        textMain: parseColor('--text-main', const Color(0xFFF8FAFC)),
+        textSecondary: parseColor('--text-secondary', const Color(0xFF94A3B8)),
+      );
+    } catch (_) {
+      return const IndexTheme();
+    }
+  }
+}
+
+// ============================================================================
 // ЭКРАН-ЗАГЛУШКА ДЛЯ ДЕСКТОПА И ANDROID WEB
 // ============================================================================
 class SajdahWebStubScreen extends StatelessWidget {
@@ -265,140 +324,274 @@ class SajdahWebStubScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bool isAndroid = SajdahConfig.isAndroidWeb();
+    final IndexTheme theme = IndexTheme.fromCssOrDefaults();
 
     return Scaffold(
-      backgroundColor: const Color(0xFF121212),
-      body: Center(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 40),
-          child: Container(
-            constraints: const BoxConstraints(maxWidth: 500),
-            padding: const EdgeInsets.all(32),
-            decoration: BoxDecoration(
-              color: const Color(0xFF1E1E1E),
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: Colors.white.withOpacity(0.05), width: 1),
+      backgroundColor: theme.bgColor,
+      body: Stack(
+        children: [
+          Positioned.fill(
+            child: Container(
+              decoration: BoxDecoration(
+                gradient: RadialGradient(
+                  center: const Alignment(-0.6, -0.8),
+                  radius: 0.9,
+                  colors: [
+                    theme.accentColor.withOpacity(0.12),
+                    Colors.transparent,
+                  ],
+                ),
+              ),
             ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.02),
-                    shape: BoxShape.circle,
-                    border: Border.all(color: Colors.white.withOpacity(0.05)),
-                  ),
-                  child: Icon(
-                    isAndroid ? Icons.phone_android_rounded : Icons.laptop_chromebook_rounded,
-                    size: 48,
-                    color: const Color(0xFFBB86FC),
-                  ),
+          ),
+          Positioned.fill(
+            child: Container(
+              decoration: BoxDecoration(
+                gradient: RadialGradient(
+                  center: const Alignment(0.6, 0.6),
+                  radius: 0.9,
+                  colors: [
+                    theme.primaryColor.withOpacity(0.10),
+                    Colors.transparent,
+                  ],
                 ),
-                const SizedBox(height: 24),
-                const Text(
-                  "Sajdah Helper",
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: 26,
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: 1.5,
+              ),
+            ),
+          ),
+
+          Center(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 40),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _buildBrandLogo(theme),
+                  const SizedBox(height: 32),
+
+                  Container(
+                    constraints: const BoxConstraints(maxWidth: 480),
+                    padding: const EdgeInsets.all(32),
+                    decoration: BoxDecoration(
+                      color: theme.surfaceCard,
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: theme.borderColor, width: 1),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.4),
+                          blurRadius: 32,
+                          offset: const Offset(0, 12),
+                        ),
+                        BoxShadow(
+                          color: theme.primaryColor.withOpacity(0.15),
+                          blurRadius: 20,
+                        ),
+                      ],
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: theme.primaryColor.withOpacity(0.08),
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: theme.primaryColor.withOpacity(0.25),
+                            ),
+                          ),
+                          child: Icon(
+                            isAndroid ? Icons.phone_android_rounded : Icons.laptop_chromebook_rounded,
+                            size: 44,
+                            color: theme.primaryColor,
+                          ),
+                        ),
+                        const SizedBox(height: 20),
+
+                        Text(
+                          "Sajdah Helper",
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: theme.textMain,
+                            fontSize: 24,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: -0.5,
+                            fontFamily: 'Plus Jakarta Sans',
+                          ),
+                        ),
+                        const SizedBox(height: 14),
+
+                        Text(
+                          isAndroid
+                              ? "Для наиболее точной работы алгоритмов и полной стабильности рекомендуем использовать нативное приложение."
+                              : "Приложение спроектировано и оптимизировано исключительно для мобильных устройств.",
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: theme.textSecondary,
+                            fontSize: 14,
+                            height: 1.6,
+                            fontFamily: 'Plus Jakarta Sans',
+                          ),
+                        ),
+                        const SizedBox(height: 28),
+
+                        if (isAndroid) ...[
+                          _buildPrimaryButton(
+                            label: "Установить из RuStore",
+                            icon: Icons.download_rounded,
+                            theme: theme,
+                            onTap: () => _openUrl("https://www.rustore.ru/catalog/app/com.darkframe.sajdah_helper"),
+                          ),
+                          const SizedBox(height: 12),
+                          _buildSecondaryButton(
+                            label: "Загрузить с GitHub",
+                            icon: Icons.android_rounded,
+                            theme: theme,
+                            onTap: () => _openUrl("https://github.com/Signa-Inc/Sajdah_Helper/releases"),
+                          ),
+                        ],
+                      ],
+                    ),
                   ),
-                ),
-                const SizedBox(height: 16),
-                Text(
-                  isAndroid
-                      ? "Для наиболее точной работы алгоритмов и полной стабильности рекомендуем использовать нативное приложени."
-                      : "Приложение спроектировано и оптимизировано исключительно для мобильных устройств.",
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: Colors.white.withOpacity(0.6),
-                    fontSize: 15,
-                    height: 1.6,
-                  ),
-                ),
-                const SizedBox(height: 32),
-                if (isAndroid) ...[
-                  _buildButton(
-                    label: "Установить из RuStore",
-                    icon: Icons.download_rounded,
-                    color: const Color(0xFFBB86FC),
-                    textColor: Colors.black,
-                    onTap: () => _openUrl("https://www.rustore.ru/catalog/app/com.darkframe.sajdah_helper"),
-                  ),
-                  const SizedBox(height: 12),
-                  _buildButton(
-                    label: "Загрузить с GitHub",
-                    icon: Icons.android_rounded,
-                    color: Colors.white.withOpacity(0.05),
-                    textColor: Colors.white,
-                    borderColor: Colors.white.withOpacity(0.2),
-                    onTap: () => _openUrl("https://github.com/Signa-Inc/Sajdah_Helper/releases"),
-                  ),
-                ]
-                else ...[
-                  _buildButton(
-                    label: "Вернуться обратно",
-                    icon: Icons.language_rounded,
-                    color: const Color(0xFFBB86FC),
-                    textColor: Colors.black,
-                    onTap: () => _openUrl(Uri.base.resolve('/').toString()),
+
+                  const SizedBox(height: 32),
+                  Text(
+                    '© 2026 SignaInc',
+                    style: TextStyle(
+                      color: theme.textSecondary.withOpacity(0.6),
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                      fontFamily: 'Plus Jakarta Sans',
+                    ),
                   ),
                 ],
-                const SizedBox(height: 32),
-                const Divider(color: Colors.white10),
-                const SizedBox(height: 8),
-                Text(
-                  'SignaInc',
-                  style: TextStyle(
-                    color: Colors.white.withOpacity(0.25),
-                    fontSize: 13,
-                    fontWeight: FontWeight.w300,
-                    letterSpacing: 0.8,
-                  ),
-                ),
-              ],
+              ),
             ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBrandLogo(IndexTheme theme) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          "Signa",
+          style: TextStyle(
+            color: theme.textMain,
+            fontSize: 26,
+            fontWeight: FontWeight.w800,
+            letterSpacing: -0.5,
+            fontFamily: 'Plus Jakarta Sans',
+          ),
+        ),
+        ShaderMask(
+          shaderCallback: (bounds) => LinearGradient(
+            colors: [theme.primaryColor, theme.accentColor],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ).createShader(bounds),
+          child: const Text(
+            "Inc",
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 26,
+              fontWeight: FontWeight.w800,
+              letterSpacing: -0.5,
+              fontFamily: 'Plus Jakarta Sans',
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildPrimaryButton({
+    required String label,
+    required IconData icon,
+    required IndexTheme theme,
+    required VoidCallback onTap,
+  }) {
+    return Container(
+      width: double.infinity,
+      height: 50,
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [Color(0xFF0284C7), Color(0xFF6366F1)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: theme.primaryColor.withOpacity(0.30),
+            blurRadius: 20,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(12),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, color: Colors.white, size: 20),
+              const SizedBox(width: 8),
+              Text(
+                label,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                  fontFamily: 'Plus Jakarta Sans',
+                ),
+              ),
+            ],
           ),
         ),
       ),
     );
   }
 
-  Widget _buildButton({
+  Widget _buildSecondaryButton({
     required String label,
     required IconData icon,
-    required Color color,
-    required Color textColor,
-    Color? borderColor,
+    required IndexTheme theme,
     required VoidCallback onTap,
   }) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(12),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        width: double.infinity,
-        height: 52,
-        decoration: BoxDecoration(
-          color: color,
+    return Container(
+      width: double.infinity,
+      height: 50,
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.03),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: theme.borderColor, width: 1),
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
           borderRadius: BorderRadius.circular(12),
-          border: borderColor != null ? Border.all(color: borderColor, width: 1) : null,
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(icon, color: textColor, size: 20),
-            const SizedBox(width: 10),
-            Text(
-              label,
-              style: TextStyle(
-                color: textColor,
-                fontSize: 15,
-                fontWeight: FontWeight.bold,
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, color: theme.textMain, size: 20),
+              const SizedBox(width: 8),
+              Text(
+                label,
+                style: TextStyle(
+                  color: theme.textMain,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                  fontFamily: 'Plus Jakarta Sans',
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -1460,7 +1653,7 @@ class _SajdahScreenState extends State<SajdahScreen> with WidgetsBindingObserver
             Center(
               child: GestureDetector(
                 onTap: () async {
-                  final Uri url = Uri.parse('https://github.com/Signa-Inc/');
+                  final Uri url = Uri.parse('https://signainc.ru');
                   try {
                     await launchUrl(
                         url,
