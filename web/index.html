@@ -89,11 +89,18 @@
   window.sajdahStream = null;
   window.sajdahVideoEl = null;
 
+  window.sajdahFaceInitError = null;
+
   async function sajdahInitFace() {
-    await faceapi.nets.tinyFaceDetector.loadFromUri(
-      'https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/weights'
-    );
-    window.sajdahFaceReady = true;
+    try {
+      await faceapi.nets.tinyFaceDetector.loadFromUri(
+        'https://cdn.jsdelivr.net/gh/justadudewhohacks/face-api.js@master/weights'
+      );
+      window.sajdahFaceReady = true;
+    } catch (e) {
+      window.sajdahFaceInitError = String(e && e.message ? e.message : e);
+      console.error('sajdahInitFace failed:', e);
+    }
   }
 
   async function sajdahStartCamera() {
@@ -143,6 +150,22 @@
       console.warn('sajdahDetectFaceScore failed:', e);
       return -1;
     }
+  }
+
+  // Диагностика состояния камеры/модели для debug-панели
+  async function sajdahDebugInfo() {
+    const v = window.sajdahVideoEl;
+    return JSON.stringify({
+      faceReady: window.sajdahFaceReady,
+      faceInitError: window.sajdahFaceInitError,
+      hasFaceapi: typeof faceapi !== 'undefined',
+      hasStream: !!window.sajdahStream,
+      hasVideoEl: !!v,
+      videoReadyState: v ? v.readyState : null,
+      videoWidth: v ? v.videoWidth : null,
+      videoHeight: v ? v.videoHeight : null,
+      videoPaused: v ? v.paused : null
+    });
   }
 </script>
 

@@ -12,3 +12,5 @@ Future<bool> startFaceCamera() => startFaceCameraImpl();
 void stopFaceCamera() => stopFaceCameraImpl();
 
 Future<double> detectFaceScore() => detectFaceScoreImpl();
+
+Future<String> debugInfo() => debugInfoImpl();

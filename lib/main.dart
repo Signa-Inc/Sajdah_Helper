@@ -1310,20 +1310,52 @@ if (SajdahConfig.isiOSWeb()) {
     return;
   }
 
+  Timer? _iosFaceLoopTimer;
+
+  // ---- DEBUG для iOS Web ----
+  final ValueNotifier<String> iosDebugLog = ValueNotifier('');
+  int _iosDebugTickCount = 0;
+  bool _iosFaceModelReady = false;
+
+  void _pushDebugLine(String line) {
+    if (!isDebugMode) return;
+    final ts = DateTime.now().toIso8601String().substring(11, 19);
+    final existing = iosDebugLog.value.isEmpty ? <String>[] : iosDebugLog.value.split('\n');
+    existing.insert(0, '[$ts] $line');
+    if (existing.length > 30) existing.removeRange(30, existing.length);
+    iosDebugLog.value = existing.join('\n');
+  }
+  // ---------------------------
+
   Future<void> _initIosWebFaceLoop() async {
+    _pushDebugLine('init: loading model...');
     await initFaceDetection();
+    _pushDebugLine('init: model loaded, starting camera...');
+
     final started = await startFaceCamera();
+    _pushDebugLine('init: camera started = $started');
 
     if (!started) {
       if (mounted) setState(() { isInitializing = false; });
+      _pushDebugLine('ABORT: camera failed to start (permission denied?)');
       return;
     }
 
     if (mounted) setState(() { isInitializing = false; });
 
+    final debug = await debugInfo();
+    _pushDebugLine('post-start state: $debug');
+
+    if (debug.contains('"faceReady":false')) {
+      _pushDebugLine('WARNING: model failed to load, auto-detection disabled, use +1 manually');
+      _iosFaceModelReady = false;
+    } else {
+      _iosFaceModelReady = true;
+    }
+
     final analyzer = _frameAnalyzer as IosWebFrameAnalyzer;
 
-    Timer.periodic(const Duration(milliseconds: 200), (timer) async {
+    _iosFaceLoopTimer = Timer.periodic(const Duration(milliseconds: 200), (timer) async {
       if (!mounted) {
         timer.cancel();
         stopFaceCamera();
@@ -1332,18 +1364,48 @@ if (SajdahConfig.isiOSWeb()) {
       if (isSettingsOpen) return;
 
       final score = await detectFaceScore();
+
+      // Если модель не загрузилась (faceReady == false), score всегда будет -1,
+      // и раньше это ошибочно трактовалось как "суджуд" (лицо пропало).
+      // Явно отличаем "модель не готова" от "лицо реально не найдено":
+      // при неготовой модели просто ничего не засчитываем.
+      if (!_iosFaceModelReady) {
+        _iosDebugTickCount++;
+        if (_iosDebugTickCount % 8 == 0) {
+          _pushDebugLine('skip: model not ready, score=$score ignored');
+        }
+        return;
+      }
+
       final result = analyzer.fromFaceScore(score);
 
       _changePercentageNotifier.value = result.computedPercentage;
       _brightnessNotifier.value = result.avgBrightness;
 
+      _iosDebugTickCount++;
+      // Раз в ~1.6 сек (8 тиков по 200мс) пишем срез состояния,
+      // чтобы не заспамить лог, но видеть динамику score во времени.
+      if (_iosDebugTickCount % 8 == 0) {
+        _pushDebugLine(
+          'score=${score.toStringAsFixed(2)} '
+          'pct=${result.computedPercentage.toStringAsFixed(2)} '
+          'confirm=$confirmCount '
+          'detected=$isSajdaDetected '
+          'rakat=$rakatCount',
+        );
+      }
+
       if (result.computedPercentage > SajdahConfig.detectionThreshold) {
         confirmCount++;
         if (confirmCount >= SajdahConfig.framesToConfirm && !isSajdaDetected) {
+          _pushDebugLine('>>> SAJDA TRIGGERED (score=$score, confirm=$confirmCount)');
           processSajda();
           isSajdaDetected = true;
         }
       } else {
+        if (isSajdaDetected) {
+          _pushDebugLine('<<< face regained, resetting isSajdaDetected (score=$score)');
+        }
         confirmCount = 0;
         isSajdaDetected = false;
       }
@@ -1449,6 +1511,13 @@ if (SajdahConfig.isiOSWeb()) {
     _executeDndCommand('resetSession');
     _brightnessNotifier.dispose();
     _changePercentageNotifier.dispose();
+
+    if (SajdahConfig.isiOSWeb()) {
+      _iosFaceLoopTimer?.cancel();
+      stopFaceCamera();
+      iosDebugLog.dispose();
+    }
+
     super.dispose();
   }
 
@@ -1523,6 +1592,32 @@ if (SajdahConfig.isiOSWeb()) {
                             ],
                           );
                         },
+                      );
+                    },
+                  ),
+
+                if (isDebugMode && SajdahConfig.isiOSWeb())
+                  ValueListenableBuilder<String>(
+                    valueListenable: iosDebugLog,
+                    builder: (context, log, _) {
+                      return Column(
+                        children: [
+                          const SizedBox(height: 20),
+                          Container(
+                            width: double.infinity,
+                            constraints: const BoxConstraints(maxHeight: 220),
+                            margin: const EdgeInsets.symmetric(horizontal: 20),
+                            padding: const EdgeInsets.all(10),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withOpacity(0.03),
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(color: Colors.white.withOpacity(0.08), width: 1),
+                            ),
+                            child: SingleChildScrollView(
+                              child: _buildDebugText(log.isEmpty ? 'waiting for face loop...' : log),
+                            ),
+                          ),
+                        ],
                       );
                     },
                   ),

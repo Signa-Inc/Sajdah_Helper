@@ -59,3 +59,17 @@ Future<double> detectFaceScoreImpl() async {
     return -1.0;
   }
 }
+
+@JS('sajdahDebugInfo')
+external JSPromise<JSString> _sajdahDebugInfo();
+
+/// Возвращает строку с диагностикой: готова ли модель, жив ли видеопоток,
+/// его readyState/размеры. Используется только в debug-режиме.
+Future<String> debugInfoImpl() async {
+  try {
+    final result = await _sajdahDebugInfo().toDart;
+    return result.toDart;
+  } catch (e) {
+    return 'debugInfo error: $e';
+  }
+}

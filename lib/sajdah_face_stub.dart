@@ -8,3 +8,5 @@ Future<bool> startFaceCameraImpl() async => false;
 void stopFaceCameraImpl() {}
 
 Future<double> detectFaceScoreImpl() async => -1.0;
+
+Future<String> debugInfoImpl() async => 'not web';
