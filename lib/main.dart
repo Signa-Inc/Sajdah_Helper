@@ -436,7 +436,7 @@ class SajdahWebStubScreen extends StatelessWidget {
 
                         if (isAndroid) ...[
                           _buildPrimaryButton(
-                            label: "Установить из RuStore",
+                            label: "Установить с RuStore",
                             icon: Icons.download_rounded,
                             theme: theme,
                             onTap: () => _openUrl("https://www.rustore.ru/catalog/app/com.darkframe.sajdah_helper"),
@@ -1679,7 +1679,7 @@ class _SajdahScreenState extends State<SajdahScreen> with WidgetsBindingObserver
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        '1.0.0',
+                        '1.0.5',
                         style: TextStyle(
                           color: Colors.white.withOpacity(0.15),
                           fontSize: 11,
