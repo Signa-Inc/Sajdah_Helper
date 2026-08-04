@@ -12,6 +12,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter/foundation.dart';
 import 'pwa_helper.dart';
 import 'package:universal_html/html.dart' as html;
+import 'sajdah_face_helper.dart';
 
 class AnalysisResult {
   final double computedPercentage;
@@ -96,6 +97,29 @@ class AndroidFrameAnalyzer extends SajdahFrameAnalyzer {
 
     final double computedPercentage = totalChecked > 0 ? (changedPixels / totalChecked) : 0;
     return AnalysisResult(computedPercentage: computedPercentage, avgBrightness: avgBrightness);
+  }
+}
+
+class IosWebFrameAnalyzer extends SajdahFrameAnalyzer {
+  @override
+  AnalysisResult analyze({
+    required Uint8List currentBytes,
+    required int width,
+    required int height,
+    required int bytesPerRow,
+    required int sensorOrientation,
+    required bool isDebugMode,
+  }) {
+    // Не используется: iOS Web ветка вызывает analyzeFaceScore() напрямую (async),
+    // этот метод оставлен для совместимости с абстрактным классом.
+    return AnalysisResult(computedPercentage: 0.0, avgBrightness: 0.0);
+  }
+
+  /// score > 0.4 обычно значит лицо распознано; -1 значит лицо не найдено
+  AnalysisResult fromFaceScore(double score) {
+    // Лицо не найдено => считаем что произошло "закрытие камеры" => высокий процент = суджуд
+    final double computedPercentage = score < 0 ? 1.0 : 0.0;
+    return AnalysisResult(computedPercentage: computedPercentage, avgBrightness: 128.0);
   }
 }
 
@@ -1017,7 +1041,11 @@ class _SajdahScreenState extends State<SajdahScreen> with WidgetsBindingObserver
       debugPrint("Wakelock enable error: $e");
     }
 
-    _frameAnalyzer = AndroidFrameAnalyzer();
+    _frameAnalyzer = SajdahConfig.isiOSWeb() ? IosWebFrameAnalyzer() : AndroidFrameAnalyzer();
+
+if (SajdahConfig.isiOSWeb()) {
+  _initIosWebFaceLoop();
+}
 
     isDebugMode = SajdahStorage().getDebugMode();
 
@@ -1083,7 +1111,12 @@ class _SajdahScreenState extends State<SajdahScreen> with WidgetsBindingObserver
   }
 
   Future<void> initCamera() async {
-    if (!SajdahStorage().getCameraEnabled() || SajdahConfig.isiOSWeb()) {
+    if (SajdahConfig.isiOSWeb()) {
+      // iOS Web использует отдельный getUserMedia + face-api.js вместо пакета camera
+      return;
+    }
+
+    if (!SajdahStorage().getCameraEnabled()) {
       if (mounted) {
         setState(() {
           isInitializing = false;
@@ -1275,6 +1308,46 @@ class _SajdahScreenState extends State<SajdahScreen> with WidgetsBindingObserver
 
   void analyzeWebFrame(Uint8List jpegBytes) {
     return;
+  }
+
+  Future<void> _initIosWebFaceLoop() async {
+    await initFaceDetection();
+    final started = await startFaceCamera();
+
+    if (!started) {
+      if (mounted) setState(() { isInitializing = false; });
+      return;
+    }
+
+    if (mounted) setState(() { isInitializing = false; });
+
+    final analyzer = _frameAnalyzer as IosWebFrameAnalyzer;
+
+    Timer.periodic(const Duration(milliseconds: 200), (timer) async {
+      if (!mounted) {
+        timer.cancel();
+        stopFaceCamera();
+        return;
+      }
+      if (isSettingsOpen) return;
+
+      final score = await detectFaceScore();
+      final result = analyzer.fromFaceScore(score);
+
+      _changePercentageNotifier.value = result.computedPercentage;
+      _brightnessNotifier.value = result.avgBrightness;
+
+      if (result.computedPercentage > SajdahConfig.detectionThreshold) {
+        confirmCount++;
+        if (confirmCount >= SajdahConfig.framesToConfirm && !isSajdaDetected) {
+          processSajda();
+          isSajdaDetected = true;
+        }
+      } else {
+        confirmCount = 0;
+        isSajdaDetected = false;
+      }
+    });
   }
 
   void processSajda() async {
