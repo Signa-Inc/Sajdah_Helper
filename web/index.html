@@ -82,6 +82,70 @@
   })();
 </script>
 
+<!-- ДОБАВЛЕНО: face-api.js (TinyFaceDetector) для распознавания суджуда на iOS Web/PWA -->
+<script defer src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
+<script>
+  window.sajdahFaceReady = false;
+  window.sajdahStream = null;
+  window.sajdahVideoEl = null;
+
+  async function sajdahInitFace() {
+    await faceapi.nets.tinyFaceDetector.loadFromUri(
+      'https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/weights'
+    );
+    window.sajdahFaceReady = true;
+  }
+
+  async function sajdahStartCamera() {
+    try {
+      window.sajdahStream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'user', width: 320, height: 240 },
+        audio: false
+      });
+      const video = document.createElement('video');
+      video.srcObject = window.sajdahStream;
+      video.playsInline = true;
+      video.muted = true;
+      video.style.display = 'none';
+      document.body.appendChild(video);
+      await video.play();
+      window.sajdahVideoEl = video;
+      return true;
+    } catch (e) {
+      console.warn('sajdahStartCamera failed:', e);
+      return false;
+    }
+  }
+
+  function sajdahStopCamera() {
+    if (window.sajdahStream) {
+      window.sajdahStream.getTracks().forEach(function (t) { t.stop(); });
+      window.sajdahStream = null;
+    }
+    if (window.sajdahVideoEl) {
+      window.sajdahVideoEl.remove();
+      window.sajdahVideoEl = null;
+    }
+  }
+
+  // Возвращает score детекции лица (0..1), либо -1 если лицо не найдено
+  // или модель/видео ещё не готовы.
+  async function sajdahDetectFaceScore() {
+    if (!window.sajdahFaceReady || !window.sajdahVideoEl) return -1;
+    try {
+      const options = new faceapi.TinyFaceDetectorOptions({
+        inputSize: 160,
+        scoreThreshold: 0.4
+      });
+      const result = await faceapi.detectSingleFace(window.sajdahVideoEl, options);
+      return result ? result.score : -1;
+    } catch (e) {
+      console.warn('sajdahDetectFaceScore failed:', e);
+      return -1;
+    }
+  }
+</script>
+
 <!--
   You can customize the "flutter_bootstrap.js" script.
   This is useful to provide a custom configuration to the Flutter loader
